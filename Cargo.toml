@@ -1,0 +1,23 @@
+[package]
+name = "mini_alph"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bio = "*"
+rand = "0.8.3"
+fnv = "*"
+fxhash = "*"
+debruijn = "*"
+disjoint-sets = "*"
+
+[profile.release]
+opt-level = 3
+
+[profile.dev]
+opt-level = 3
+
+[profile.bench]
+debug = true
