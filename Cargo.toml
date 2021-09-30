@@ -12,6 +12,7 @@ fnv = "*"
 fxhash = "*"
 debruijn = "*"
 disjoint-sets = "*"
+smallvec = { version = "*", features = ["union"] }
 
 [profile.release]
 opt-level = 3
