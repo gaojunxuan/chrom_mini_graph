@@ -43,7 +43,7 @@ TODO: This is a simplified version of the full_mini_graph.csv file. Not working 
 
 ### serialized_mini_graph.json
 
-This is the JSON serialization for the entire graph. See [this document](https://docs.google.com/document/d/1oRHjPgP-Bh9UkySCduWIl5yCpfiLVEoSnRdzdx4a7-Y/edit?usp=sharing) for how to deserialize the graph.
+This is the JSON serialization for the entire graph. See [this document](https://docs.google.com/document/d/1oRHjPgP-Bh9UkySCduWIl5yCpfiLVEoSnRdzdx4a7-Y/edit?usp=sharing) for how to deserialize the graph. The most significant bit corresponds to the first genome in the command, and the least significant bit corresponds to the last genome int he command. 
 
 ### Visualization
 
