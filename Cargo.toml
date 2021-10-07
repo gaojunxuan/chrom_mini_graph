@@ -1,5 +1,5 @@
 [package]
-name = "chrom_mini_pangraph"
+name = "chrom_mini_graph"
 version = "0.1.0"
 edition = "2018"
 

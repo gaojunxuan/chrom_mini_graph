@@ -1,8 +1,8 @@
 use debruijn::dna_string::*;
-use chrom_mini_pangraph::chain;
-use chrom_mini_pangraph::graph_utils;
-use chrom_mini_pangraph::seeding_methods_bit;
-use chrom_mini_pangraph::simulation_utils_bit;
+use chrom_mini_graph::chain;
+use chrom_mini_graph::graph_utils;
+use chrom_mini_graph::seeding_methods_bit;
+use chrom_mini_graph::simulation_utils_bit;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
