@@ -58,7 +58,8 @@ pub fn minimizer_seeds(s: &DnaString, w: usize, k: usize) -> (Vec<KmerNode>, Vec
             id: positions_selected.len() as u32,
             order: positions_selected.len() as u32,
             color: 1,
-            child_nodes: SmallVec::<[u32; 1]>::new(),
+//            child_nodes: SmallVec::<[u32; 1]>::new(),
+            child_nodes: vec![],
         };
         minimizer_seeds.push(kmer_node);
         //        let pos_vec = minimizer_seeds
@@ -116,7 +117,8 @@ pub fn open_sync_seeds(string: &DnaString, k: usize, t: usize) -> (Vec<KmerNode>
                     id: positions_selected.len() as u32,
                     order: positions_selected.len() as u32,
                     color: 1,
-                    child_nodes: SmallVec::<[u32; 1]>::new(),
+//                    child_nodes: SmallVec::<[u32; 1]>::new(),
+                    child_nodes: vec![],
                     };
 
                 positions_selected.push(i as u32);
@@ -130,7 +132,8 @@ pub fn open_sync_seeds(string: &DnaString, k: usize, t: usize) -> (Vec<KmerNode>
                     id: positions_selected.len() as u32,
                     order: positions_selected.len() as u32,
                     color: 1,
-                    child_nodes: SmallVec::<[u32; 1]>::new(),
+//                    child_nodes: SmallVec::<[u32; 1]>::new(),
+                    child_nodes: vec![],
                     };
                 positions_selected.push(i as u32);
                 syncmer_seeds.push(kmer_node);

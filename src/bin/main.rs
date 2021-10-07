@@ -3,6 +3,7 @@ use mini_alph::chain;
 use mini_alph::graph_utils;
 use mini_alph::seeding_methods_bit;
 use mini_alph::simulation_utils_bit;
+use serde_json::{Result, Value};
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
@@ -11,6 +12,7 @@ use std::time::Instant;
 fn main() {
     let args: Vec<String> = env::args().collect();
 
+    //Input real genomes to create pangenom
     let using_genomes;
     if args.len() > 1 {
         using_genomes = true;
@@ -31,7 +33,7 @@ fn main() {
 
     if !using_genomes {
         let mut seeds1;
-        let n = 6 * usize::pow(10, 7);
+        let n = 6 * usize::pow(10, 6);
         let s = simulation_utils_bit::gen_rand_string(n);
 
         println!("Generating random strings {}", now.elapsed().as_secs_f32());
@@ -126,7 +128,7 @@ fn main() {
         }
 
         let mut seeds1;
-        let (mut s1, _p1) = seeding_methods_bit::minimizer_seeds(&chroms[0], w, k);
+        let (s1, _p1) = seeding_methods_bit::minimizer_seeds(&chroms[0], w, k);
         dbg!(s1.len());
         seeds1 = s1;
 
@@ -159,10 +161,27 @@ fn main() {
         }
         if print_file {
             let concat_graph = graph_utils::concat_graph(&seeds1[0], &seeds1);
-            let mut file = File::create("graph_concat.txt").unwrap();
+            let mut file = File::create("simplified_mini_graph.csv").unwrap();
 
             for (n1, n2, weight) in concat_graph.iter() {
                 let towrite = format!("{},{},{}\n", n1, n2, weight);
+                write!(&mut file, "{}", towrite).unwrap();
+            }
+        }
+
+        let j = serde_json::to_string(&seeds1);
+
+        // Print, write to a file, or send to an HTTP server.
+        let mut file_json = File::create("serialized_mini_graph.json").unwrap();
+        write!(&mut file_json, "{}", j.unwrap()).unwrap();
+
+        let mut file = File::create("full_mini_graph.csv").unwrap();
+        for node in seeds1.iter() {
+            for child in node.child_nodes.iter() {
+                let towrite = format!(
+                    "{}-{},{}-{}\n",
+                    node.order, node.id, seeds1[*child as usize].order, seeds1[*child as usize].id,
+                );
                 write!(&mut file, "{}", towrite).unwrap();
             }
         }

@@ -13,7 +13,8 @@ pub struct Node<T: PartialEq + Debug> {
     smallest_child_index: Option<usize>,
     anchor_id: usize,
     qvalue: f64,
-    node_id: usize,
+    node_id_ref: usize,
+    node_id_query: usize,
 }
 
 /// A simple AVL tree.
@@ -149,7 +150,8 @@ where
             height: 0,
             anchor_id: usize::MIN,
             qvalue: f64::MIN,
-            node_id: 0,
+            node_id_ref: 0,
+            node_id_query: 0,
             smallest_child_index: None,
         })
     }
@@ -336,7 +338,7 @@ where
         SearchTreeIter::new(&self.nodes, self.root)
     }
 
-    pub fn update_query_info(&mut self, value: T, qvalue: f64, anchor_id: usize, node_id: usize) {
+    pub fn update_query_info(&mut self, value: T, qvalue: f64, anchor_id: usize, node_id_ref: usize, node_id_query: usize) {
         //Need to update leaf nodes too.
         let mut current_index = self.root;
         let mut found_node_index = 0;
@@ -356,7 +358,8 @@ where
 //        dbg!(&self.nodes[current_index.unwrap()], &value);
         self.nodes[current_index.unwrap()].qvalue = qvalue;
         self.nodes[current_index.unwrap()].anchor_id = anchor_id;
-        self.nodes[current_index.unwrap()].node_id = node_id;
+        self.nodes[current_index.unwrap()].node_id_ref = node_id_ref;
+        self.nodes[current_index.unwrap()].node_id_query = node_id_query;
 
         //Propagate upward for a new possible smallest child pointer
         while let Some(index) = current_index {
@@ -377,7 +380,7 @@ where
         }
     }
 
-    pub fn mrq(&self, left: T, right: T, node_id: usize) -> (i64, usize) {
+    pub fn mrq(&self, left: T, right: T, node_id_ref: usize, node_id_query: usize) -> (i64, usize) {
         let debug_mode = false;
         let mut v_p = vec![];
         //left first
@@ -421,7 +424,8 @@ where
             //DON"T PUSH SMALLEST CHILD< PUSH ITSELF
             self.nodes[current_index.unwrap()].qvalue as i64,
             self.nodes[current_index.unwrap()].anchor_id,
-            self.nodes[current_index.unwrap()].node_id,
+            self.nodes[current_index.unwrap()].node_id_ref,
+            self.nodes[current_index.unwrap()].node_id_query,
         ));
 
         if let None = current_index_l {
@@ -448,7 +452,8 @@ where
                 v_p.push((
                     self.nodes[index].qvalue as i64,
                     self.nodes[index].anchor_id,
-                    self.nodes[index].node_id,
+                    self.nodes[index].node_id_ref,
+                    self.nodes[index].node_id_query,
                 ));
                 if let Some(rc) = self.nodes[index].right_child {
                     let rc_node = &self.nodes[rc];
@@ -464,7 +469,8 @@ where
                         v_p.push((
                             rc_point_node.qvalue as i64,
                             rc_point_node.anchor_id,
-                            rc_point_node.node_id,
+                            rc_point_node.node_id_ref,
+                            rc_point_node.node_id_query,
                         ));
                     }
                 }
@@ -485,14 +491,16 @@ where
                         v_p.push((
                             right_child_node_pointer.qvalue as i64,
                             right_child_node_pointer.anchor_id,
-                            right_child_node_pointer.node_id,
+                            right_child_node_pointer.node_id_ref,
+                            right_child_node_pointer.node_id_query,
                         ));
                     }
                 }
                 v_p.push((
                     self.nodes[index].qvalue as i64,
                     self.nodes[index].anchor_id,
-                    self.nodes[index].node_id,
+                    self.nodes[index].node_id_ref,
+                    self.nodes[index].node_id_query,
                 ));
 
                 break;
@@ -510,7 +518,8 @@ where
                 v_p.push((
                     self.nodes[index].qvalue as i64,
                     self.nodes[index].anchor_id,
-                    self.nodes[index].node_id,
+                    self.nodes[index].node_id_ref,
+                    self.nodes[index].node_id_query,
                 ));
                 if let Some(lc) = self.nodes[index].left_child {
                     let lc_node = &self.nodes[lc];
@@ -522,7 +531,8 @@ where
                         v_p.push((
                             lc_node_point.qvalue as i64,
                             lc_node_point.anchor_id,
-                            lc_node_point.node_id,
+                            lc_node_point.node_id_ref,
+                            lc_node_point.node_id_query,
                         ));
                     }
                 }
@@ -539,14 +549,16 @@ where
                         v_p.push((
                             left_child_node_pointer.qvalue as i64,
                             left_child_node_pointer.anchor_id,
-                            left_child_node_pointer.node_id,
+                            left_child_node_pointer.node_id_ref,
+                            left_child_node_pointer.node_id_query,
                         ));
                     }
                 }
                 v_p.push((
                     self.nodes[index].qvalue as i64,
                     self.nodes[index].anchor_id,
-                    self.nodes[index].node_id,
+                    self.nodes[index].node_id_ref,
+                    self.nodes[index].node_id_query,
                 ));
                 break;
             }
@@ -557,7 +569,7 @@ where
         }
 
         for tuple in v_p.iter_mut() {
-            if tuple.2 == node_id {
+            if tuple.2 == node_id_ref  || tuple.3 == node_id_query{
                 tuple.0 = i64::MIN;
             }
         }

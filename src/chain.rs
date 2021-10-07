@@ -128,7 +128,7 @@ pub fn chain_seeds<'a>(
     let now = Instant::now();
     anchors.sort_by(|a, b| a.0.order.cmp(&b.0.order));
     for (i, anchor) in anchors.iter().enumerate() {
-        avl_tree.insert([anchor.1.order as usize, anchor.1.id as usize]);
+        avl_tree.insert([anchor.1.order as usize, i]);
     }
     println!("Sorting anchors {}", now.elapsed().as_secs_f32());
     //dbg!(anchors[1],anchors[2],anchors[3]);
@@ -145,7 +145,7 @@ pub fn chain_seeds<'a>(
     }
 
     let mut last_best_j = usize::MAX;
-    avl_tree.update_query_info([anchors[0].1.order as usize, anchors[0].1.id as usize],0.0, 0, anchors[0].1.id as usize);
+    avl_tree.update_query_info([anchors[0].1.order as usize, 0],0.0, 0, anchors[0].0.id as usize, anchors[0].1.id as usize);
     for i in 1..anchors.len() {
         let mut best_f_i = usize::MIN as f64;
         let mut best_j = usize::MAX;
@@ -193,22 +193,24 @@ pub fn chain_seeds<'a>(
         }
         else{
             let gap_start;
-            if anchors[i].1.order > 100000{
-                gap_start = anchors[i].1.order - 100000;
+            if anchors[i].1.order > 10000{
+                gap_start = anchors[i].1.order - 10000;
             }
             else{
                 gap_start = 0;
             }
-            let (best_score, best_id) = avl_tree.mrq([gap_start as usize,0], [anchors[i].1.order as usize, anchors[i].1.id as usize], anchors[i].0.id as usize);
+            let (best_score, best_id) = avl_tree.mrq([gap_start as usize,0], [anchors[i].1.order as usize, i], anchors[i].0.id as usize, anchors[i].1.id as usize);
+            
 
             if best_score == i64::MIN{
                 best_f_i = 0.0;
                 best_j = i;
             }
             else{
-                best_f_i = best_score as f64 + 1.0;
+//                best_f_i = best_score as f64 + 1.0;
     //            dbg!(best_id,anchors[i].1.order);
                 best_j = best_id;
+                best_f_i = best_score as f64 + f64::max(100.0 - (anchors[i].1.order - anchors[best_j].1.order) as f64,-0.01);
             }
             if anchors[i].1.order < anchors[best_j].1.order{
                 dbg!(anchors[i], anchors[best_j]);
@@ -219,7 +221,7 @@ pub fn chain_seeds<'a>(
 
         last_best_j = best_j;
         f.push(best_f_i);
-        avl_tree.update_query_info([anchors[i].1.order as usize, anchors[i].1.id as usize], best_f_i, i, anchors[i].0.id as usize);
+        avl_tree.update_query_info([anchors[i].1.order as usize,i], best_f_i, i, anchors[i].0.id as usize, anchors[i].1.id as usize);
         if best_j != usize::MAX {
             pointer_array[i] = best_j;
         }
@@ -263,6 +265,7 @@ pub fn add_align_to_graph(
     aln_nodes: Vec<KmerNode>,
     anchors: Vec<(u32, u32)>,
 ) {
+    let clone = ref_nodes.clone();
     let mut new_nodes = vec![];
     for node in ref_nodes.iter_mut() {
         node.color = node.color << 1;
@@ -274,14 +277,21 @@ pub fn add_align_to_graph(
         let kmer2r;
         let largest_anchor_id;
 
+        let left;
+        let right;
         if anchors[i].0 > anchors[i + 1].0 {
             largest_anchor_id = anchors[i].0;
-            let (left, right) = ref_nodes.split_at_mut(largest_anchor_id as usize);
+            let (_left, _right) = ref_nodes.split_at_mut(largest_anchor_id as usize);
+            left = _left;
+            right = _right;
             kmer1r = &mut right[0];
             kmer2r = &mut left[anchors[i + 1].0 as usize];
         } else {
             largest_anchor_id = anchors[i + 1].0;
-            let (left, right) = ref_nodes.split_at_mut(largest_anchor_id as usize);
+            let (_left, _right) = ref_nodes.split_at_mut(largest_anchor_id as usize);
+            left = _left;
+            right = _right;
+//            dbg!(anchors[i+1],anchors[i],i,i+1);
             kmer1r = &mut left[anchors[i].0 as usize];
             kmer2r = &mut right[0];
         }
@@ -294,6 +304,10 @@ pub fn add_align_to_graph(
 
         kmer1r.color |= 1;
         kmer2r.color |= 1;
+
+        if anchors[i].0 == 10043{
+//            dbg!(anchors[i], anchors[i+1], anchors[i+2], &aln_nodes[kmer1q.child_nodes[0] as usize], &clone[kmer1r.child_nodes[0] as usize], &kmer1r);
+        }
 
         if q_adjacent && r_adjacent {
             continue;
@@ -311,7 +325,8 @@ pub fn add_align_to_graph(
                     id: new_id as u32,
                     order: i,
                     kmer: aln_nodes[i as usize].kmer,
-                    child_nodes: SmallVec::<[u32; 1]>::new(),
+//                    child_nodes: SmallVec::<[u32; 1]>::new(),
+                    child_nodes: vec![],
                     color: 1,
                 };
 

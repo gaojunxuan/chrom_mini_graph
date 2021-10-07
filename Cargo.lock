@@ -454,6 +454,8 @@ dependencies = [
  "fnv",
  "fxhash",
  "rand",
+ "serde",
+ "serde_json",
  "smallvec",
 ]
 
