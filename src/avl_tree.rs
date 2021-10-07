@@ -1,5 +1,4 @@
 extern crate rand;
-use fxhash::FxHashSet;
 use std::fmt::Debug;
 
 /// A node inside a `SearchTree`.

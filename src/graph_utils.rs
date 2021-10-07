@@ -1,11 +1,8 @@
 use crate::data_structs::KmerNode;
 use std::cmp::Ordering;
-use crate::avl_tree;
-use std::collections::BinaryHeap;
 use fxhash::FxHashMap;
 use fxhash::FxHashSet;
 use smallvec::SmallVec;
-use std::mem;
 
 pub fn concat_graph(head: &KmerNode, ref_nodes: &Vec<KmerNode>) -> Vec<(u32,u32,usize)> {
 

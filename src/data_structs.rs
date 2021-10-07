@@ -1,8 +1,10 @@
 use debruijn::kmer::Kmer16;
 use smallvec::SmallVec;
-use serde::{Deserialize, Serialize};
+use serde::{Serialize};
 
 
+//Use the SmallVec impelementation to save lots of memory 
+//if we don't care about serializing. (SmallVec can't be serialized). 
 #[derive(Debug, Clone, Serialize)]
 pub struct KmerNode{
     pub kmer: Kmer16,

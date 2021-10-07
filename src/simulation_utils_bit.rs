@@ -1,8 +1,6 @@
 use rand::{thread_rng};
 use rand::distributions::{Bernoulli, Distribution, Uniform};
-use debruijn::Kmer;
 use debruijn::dna_string::*;
-use debruijn::kmer::Kmer16;
 
 
 pub fn gen_rand_string(n: usize) ->  DnaString{

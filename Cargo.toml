@@ -1,5 +1,5 @@
 [package]
-name = "mini_alph"
+name = "chrom_mini_pangraph"
 version = "0.1.0"
 edition = "2018"
 

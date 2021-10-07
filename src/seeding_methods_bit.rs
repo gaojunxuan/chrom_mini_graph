@@ -1,5 +1,4 @@
 use debruijn::dna_string::*;
-use smallvec::SmallVec;
 use debruijn::kmer::Kmer12;
 use debruijn::kmer::Kmer16;
 use debruijn::Vmer;

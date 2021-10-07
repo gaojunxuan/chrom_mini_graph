@@ -1,9 +1,8 @@
 use debruijn::dna_string::*;
-use mini_alph::chain;
-use mini_alph::graph_utils;
-use mini_alph::seeding_methods_bit;
-use mini_alph::simulation_utils_bit;
-use serde_json::{Result, Value};
+use chrom_mini_pangraph::chain;
+use chrom_mini_pangraph::graph_utils;
+use chrom_mini_pangraph::seeding_methods_bit;
+use chrom_mini_pangraph::simulation_utils_bit;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
@@ -21,14 +20,17 @@ fn main() {
     }
 
     let num_iters = 1;
+    //don't use chain_heuristic; it is the minimap2 heuristic and works poorly
+    //on long contigs.
     let chain_heuristic = false;
     let now = Instant::now();
     let print_file = true;
     let theta = 0.001;
     let w = 16;
-    let t = 3;
     let k = 16;
+    let t = 3;
     let h = 10;
+    //use syncmers if not using minimizers
     let use_minimizers = true;
 
     if !using_genomes {
@@ -91,7 +93,7 @@ fn main() {
             let concat_graph = graph_utils::concat_graph(&seeds1[0], &seeds1);
             let mut file = File::create("graph_concat.txt").unwrap();
 
-            for (n1, n2, weight) in concat_graph.iter() {
+            for (n1, n2, _weight) in concat_graph.iter() {
                 let towrite = format!("{},{}\n", n1, n2);
                 write!(&mut file, "{}", towrite).unwrap();
             }
@@ -120,44 +122,42 @@ fn main() {
             let reader = fasta::Reader::from_file(&args[i]);
             for record in reader.unwrap().records() {
                 let rec = record.unwrap();
-                println!("{}", rec.id());
-
                 let chrom = DnaString::from_acgt_bytes(rec.seq());
                 chroms.push(chrom);
+                println!("{}-th reference is {}.",i,args[i]);
             }
         }
 
         let mut seeds1;
         let (s1, _p1) = seeding_methods_bit::minimizer_seeds(&chroms[0], w, k);
-        dbg!(s1.len());
         seeds1 = s1;
+        println!("Starting graph has {} nodes.", seeds1.len());
 
         for i in 1..chroms.len() {
-            let mut old_graph_len = seeds1.len();
+            println!("-----------------Iteration {}-------------------", i);
+            let old_graph_len = seeds1.len();
             let seeds2;
             let now = Instant::now();
             let (s2, _p2) = seeding_methods_bit::minimizer_seeds(&chroms[i], w, k);
             seeds2 = s2;
-            println!("Generating kmers {}", now.elapsed().as_secs_f32());
-            dbg!(seeds2.len());
+            println!("Generating sketch (minimizers) time: {}", now.elapsed().as_secs_f32());
             let now = Instant::now();
             let best_anchors = chain::chain_seeds(&mut seeds1, &seeds2, h, chain_heuristic);
-            println!("Chaining {}", now.elapsed().as_secs_f32());
+            println!("Chaining time: {}", now.elapsed().as_secs_f32());
 
             let now = Instant::now();
             chain::add_align_to_graph(&mut seeds1, seeds2, best_anchors);
-            println!("Generating new graph {}", now.elapsed().as_secs_f32());
+            println!("Generating graph from alignment time: {}", now.elapsed().as_secs_f32());
             let now = Instant::now();
 
             println!(
-                "New graph now has {} nodes. Difference is {}",
+                "New graph now has {} nodes. Difference is {}.",
                 seeds1.len(),
                 seeds1.len() - old_graph_len
             );
-            old_graph_len = seeds1.len();
 
             chain::top_sort(&mut seeds1);
-            println!("Top sort {}", now.elapsed().as_secs_f32());
+            println!("Top sort time: {}.", now.elapsed().as_secs_f32());
         }
         if print_file {
             let concat_graph = graph_utils::concat_graph(&seeds1[0], &seeds1);

@@ -18,9 +18,9 @@ fn score(ref_order_dist: f64, query_order_dist: f64) -> f64 {
     let dist_multiplier = 3.0;
     let dist_ref = 16.0 - dist_multiplier * ref_order_dist;
     let dist_query = 16.0 - dist_multiplier * query_order_dist;
-    let mut score = f64::min(dist_ref, dist_query);
+    let mut _score = f64::min(dist_ref, dist_query);
     //try max chain length score
-    score = 1.0;
+    let score = 1.0;
 
     //    if score < 0.0{
     //        score = 0.05 * score - score.abs().log2();
@@ -42,7 +42,7 @@ fn score(ref_order_dist: f64, query_order_dist: f64) -> f64 {
     return score;
 }
 
-fn alpha(j: usize, i: usize, anchors: &Vec<(&KmerNode, &KmerNode)>) -> f64 {
+fn _alpha(j: usize, i: usize, anchors: &Vec<(&KmerNode, &KmerNode)>) -> f64 {
     let dist_multiplier = 1.0;
     let num_bases_query = f64::max(
         16.0 - dist_multiplier * (anchors[i].0.order as f64 - anchors[j].0.order as f64),
@@ -265,7 +265,7 @@ pub fn add_align_to_graph(
     aln_nodes: Vec<KmerNode>,
     anchors: Vec<(u32, u32)>,
 ) {
-    let clone = ref_nodes.clone();
+//    let clone = ref_nodes.clone();
     let mut new_nodes = vec![];
     for node in ref_nodes.iter_mut() {
         node.color = node.color << 1;
