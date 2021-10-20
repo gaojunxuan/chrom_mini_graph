@@ -20,7 +20,7 @@ cargo build --release
 
 ## Using chrom_mini_graph
 
-### generate
+### `generate`
 
 `./target/release/chrom_mini_graph generate ref_1.fasta ref_2.fasta ...` to create a coloured minimizer pangenome graph for references ref_1.fasta, ref_2.fasta, etc. 
 
@@ -28,9 +28,9 @@ cargo build --release
 
 To modify the parameters such as w, k, or even use syncmers instead of minimizers, see the parameters in the `src/bin/chrom_mini_graph.rs` file.
 
-### map
+### `map`
 
-A proof of concept read-to-graph mapper by mapping reads onto the graph without knowledge of colour, and then outputting the scores corresponding to each colouring.
+A proof of concept read-to-graph chainer by chaining minimizers in the read onto the graph without knowledge of colour and then outputting the scores corresponding to each colouring.
 
 `./target/release/chrom_mini_graph map (output_from_generate.bin) (your_reads.fastq) > output.txt`
 
@@ -43,7 +43,7 @@ For each read, the scores corresponding to each color is output in the form (Sco
 3. If two contigs are dissimilar, the graph generation may be very poor. We find the best alignment and align no matter what; we don't check if the alignment is actually good or not. 
 4. Reverse complements don't work in any shape or form so be careful.
 
-## Outputs
+## Outputs from `generate`
 
 ### full_mini_graph.csv 
 
@@ -56,6 +56,16 @@ This is a simplified version of the full_mini_graph.csv file. Linear paths are s
 ### serialized_mini_graph.json
 
 This is the JSON serialization for the entire graph. See [this document](https://docs.google.com/document/d/1oRHjPgP-Bh9UkySCduWIl5yCpfiLVEoSnRdzdx4a7-Y/edit?usp=sharing) for how to deserialize the graph. **IMPORTANT:** For colouring, the most significant bit corresponds to the first genome in the command, and the least significant bit corresponds to the last genome in the command. 
+
+### serialized_mini_graph.bin
+
+Binary serializeation of the graph used in the `map` subcommand.
+
+## Outputs from `map`
+
+### read_anchor_hits.txt
+
+Gives the orders of the nodes corresponding to the best chain for each read. Again, note that half of the reads will have poor chains because reverse complements are not accounted for.
 
 ### Visualization
 
