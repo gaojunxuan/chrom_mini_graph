@@ -20,7 +20,7 @@ cargo build --release
 
 ## Using chrom_mini_graph
 
-### chrom_mini_graph generate
+### generate
 
 `./target/release/chrom_mini_graph generate ref_1.fasta ref_2.fasta ...` to create a coloured minimizer pangenome graph for references ref_1.fasta, ref_2.fasta, etc. 
 
@@ -28,7 +28,7 @@ cargo build --release
 
 To modify the parameters such as w, k, or even use syncmers instead of minimizers, see the parameters in the `src/bin/chrom_mini_graph.rs` file.
 
-### chrom_mini_graph map
+### map
 
 A proof of concept read-to-graph mapper by mapping reads onto the graph without knowledge of colour, and then outputting the scores corresponding to each colouring.
 
