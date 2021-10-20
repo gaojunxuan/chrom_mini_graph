@@ -1,9 +1,12 @@
 use debruijn::dna_string::*;
+use debruijn::kmer::Kmer8;
+use debruijn::kmer::Kmer10;
 use debruijn::kmer::Kmer12;
 use debruijn::kmer::Kmer16;
 use debruijn::Vmer;
 use fxhash::hash;
 use crate::data_structs::KmerNode;
+use smallvec::SmallVec;
 
 fn position_min<T: Ord>(slice: &[T]) -> Option<usize> {
     slice
@@ -33,6 +36,9 @@ pub fn minimizer_seeds(s: &DnaString, w: usize, k: usize) -> (Vec<KmerNode>, Vec
         } else {
             if min_running_pos == running_pos {
                 min_running_pos = position_min(&window_hashes).unwrap();
+                if window_hashes[min_running_pos] == window_hashes[running_pos]{
+                    min_running_pos = running_pos;
+                }
             } else {
                 if window_hashes[running_pos] < window_hashes[min_running_pos] {
                     min_running_pos = running_pos;
@@ -57,8 +63,9 @@ pub fn minimizer_seeds(s: &DnaString, w: usize, k: usize) -> (Vec<KmerNode>, Vec
             id: positions_selected.len() as u32,
             order: positions_selected.len() as u32,
             color: 1,
-//            child_nodes: SmallVec::<[u32; 1]>::new(),
-            child_nodes: vec![],
+            child_nodes: SmallVec::<[u32; 1]>::new(),
+            child_edge_distance: SmallVec::<[u8; 1]>::new()
+//            child_nodes: vec![],
         };
         minimizer_seeds.push(kmer_node);
         //        let pos_vec = minimizer_seeds
@@ -73,13 +80,15 @@ pub fn minimizer_seeds(s: &DnaString, w: usize, k: usize) -> (Vec<KmerNode>, Vec
 
     for i in 0..minimizer_seeds.len()-1{
         minimizer_seeds[i].child_nodes.push((i+1) as u32);
+        let dist_on_genome = positions_selected[i+1] - positions_selected[i];
+        minimizer_seeds[i].child_edge_distance.push(dist_on_genome as u8);
     }
 
     return (minimizer_seeds, positions_selected);
 }
 
 pub fn open_sync_seeds(string: &DnaString, k: usize, t: usize) -> (Vec<KmerNode>, Vec<u32>) {
-    let s = 12;
+    let s = 10;
     let mut syncmer_seeds = vec![];
     let mut positions_selected: Vec<u32> = Vec::new();
     //hash all s-mers
@@ -90,7 +99,7 @@ pub fn open_sync_seeds(string: &DnaString, k: usize, t: usize) -> (Vec<KmerNode>
     let mut window_hashes = vec![0; w];
 
     for i in 0..string.len() - s + 1{
-        let smer: Kmer12 = string.slice(i, i + s).get_kmer(0);
+        let smer: Kmer10 = string.slice(i, i + s).get_kmer(0);
         window_hashes[running_pos] = hash(&smer);
         if i < w - 1 {
             continue;
@@ -116,8 +125,9 @@ pub fn open_sync_seeds(string: &DnaString, k: usize, t: usize) -> (Vec<KmerNode>
                     id: positions_selected.len() as u32,
                     order: positions_selected.len() as u32,
                     color: 1,
-//                    child_nodes: SmallVec::<[u32; 1]>::new(),
-                    child_nodes: vec![],
+                    child_nodes: SmallVec::<[u32; 1]>::new(),
+                    child_edge_distance: SmallVec::<[u8; 1]>::new()
+//                    child_nodes: vec![],
                     };
 
                 positions_selected.push(i as u32);
@@ -131,8 +141,9 @@ pub fn open_sync_seeds(string: &DnaString, k: usize, t: usize) -> (Vec<KmerNode>
                     id: positions_selected.len() as u32,
                     order: positions_selected.len() as u32,
                     color: 1,
-//                    child_nodes: SmallVec::<[u32; 1]>::new(),
-                    child_nodes: vec![],
+                    child_nodes: SmallVec::<[u32; 1]>::new(),
+                    child_edge_distance: SmallVec::<[u8; 1]>::new()
+//                    child_nodes: vec![],
                     };
                 positions_selected.push(i as u32);
                 syncmer_seeds.push(kmer_node);
@@ -145,6 +156,8 @@ pub fn open_sync_seeds(string: &DnaString, k: usize, t: usize) -> (Vec<KmerNode>
 
     for i in 0..syncmer_seeds.len()-1{
         syncmer_seeds[i].child_nodes.push((i+1) as u32);
+        let dist_on_genome = positions_selected[i+1] - positions_selected[i];
+        syncmer_seeds[i].child_edge_distance.push(dist_on_genome as u8);
     }
 
     return (syncmer_seeds, positions_selected);

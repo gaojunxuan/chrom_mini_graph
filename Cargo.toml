@@ -12,9 +12,11 @@ fnv = "*"
 fxhash = "*"
 debruijn = "*"
 disjoint-sets = "*"
-smallvec = { version = "*", features = ["union"] }
+smallvec = { version = "*", features = ["union","serde"] }
 serde = "*"
 serde_json = "1.0"
+clap = "*"
+bincode = "*"
 
 [profile.release]
 opt-level = 3

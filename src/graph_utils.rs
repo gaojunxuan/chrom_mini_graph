@@ -4,11 +4,12 @@ use fxhash::FxHashMap;
 use fxhash::FxHashSet;
 use smallvec::SmallVec;
 
-pub fn concat_graph(head: &KmerNode, ref_nodes: &Vec<KmerNode>) -> Vec<(u32,u32,usize)> {
+pub fn concat_graph<'a>(head: &KmerNode, ref_nodes: &Vec<KmerNode>) -> (Vec<(u32,u32,usize)>, FxHashMap<u32,Vec<u32>>) {
 
     let mut to_return = vec![];
     let mut bubble_nodes = FxHashSet::default();
     let mut in_edges = FxHashMap::default();
+    let mut vertex_to_kmers_map = FxHashMap::default();
 
     bubble_nodes.insert(head.id);
     for node in ref_nodes.iter() {
@@ -34,10 +35,12 @@ pub fn concat_graph(head: &KmerNode, ref_nodes: &Vec<KmerNode>) -> Vec<(u32,u32,
         for child_id in ref_nodes[*start_node as usize].child_nodes.iter() {
             nodes_to_visit.push(*child_id)
         }
+        let mut intermediate_vertices = vec![];
         while nodes_to_visit.len() != 0 {
             len_edge += 1;
             let node = nodes_to_visit.pop().unwrap();
             if !bubble_nodes.contains(&node){
+                intermediate_vertices.push(node);
                 visited.insert(node);
                 for child_id in ref_nodes[node as usize].child_nodes.iter() {
                     if visited.contains(&child_id) {
@@ -48,13 +51,21 @@ pub fn concat_graph(head: &KmerNode, ref_nodes: &Vec<KmerNode>) -> Vec<(u32,u32,
                 }
             }
             else{
-                to_return.push((*start_node, node, len_edge));
+                if intermediate_vertices.len() == 0{
+                    to_return.push((ref_nodes[*start_node as usize].order, ref_nodes[node as usize].order, len_edge));
+                }
+                else{
+                    to_return.push((ref_nodes[*start_node as usize].order, ref_nodes[intermediate_vertices[0] as usize].order, len_edge));
+                    to_return.push((ref_nodes[intermediate_vertices[0] as usize].order, ref_nodes[node as usize].order, len_edge));
+                    vertex_to_kmers_map.insert(intermediate_vertices[0],intermediate_vertices.clone());
+                    intermediate_vertices.clear();
+                }
                 len_edge = 0;
             }
         }
     }
 
-    return to_return;
+    return (to_return, vertex_to_kmers_map);
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
