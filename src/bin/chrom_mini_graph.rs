@@ -327,12 +327,9 @@ fn main() {
 
             write!(&mut anchor_file, "{}:", id).unwrap();
             for anchor in best_anchors.iter() {
-                if anchor == best_anchors.last().unwrap() {
-                    write!(&mut anchor_file, "{}\n", anchor.0).unwrap();
-                } else {
-                    write!(&mut anchor_file, "{},", anchor.0).unwrap();
-                }
+                write!(&mut anchor_file, "{},", anchor.0).unwrap();
             }
+            write!(&mut anchor_file, "\n").unwrap();
             println!("Read: {}", id);
             println!("Chaining time: {}", now.elapsed().as_secs_f32());
             let now = Instant::now();
