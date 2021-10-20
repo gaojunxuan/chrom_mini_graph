@@ -28,6 +28,7 @@ if not use_graphviz:
         for read in read_anchor_file:
             splitted = read.split(':')
             spl = splitted[1].split(',')
+            spl = spl[:-1]
             int_spl = [int(x) for x in spl];
             for node in spl:
                 reads[splitted[0]] = int_spl
