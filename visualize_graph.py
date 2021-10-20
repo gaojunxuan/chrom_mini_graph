@@ -1,4 +1,5 @@
 import networkx as nx
+import matplotlib
 import matplotlib.pyplot as plt
 from networkx.drawing.nx_agraph import to_agraph
 import sys
@@ -28,6 +29,7 @@ if not use_graphviz:
         for read in read_anchor_file:
             splitted = read.split(':')
             spl = splitted[1].split(',')
+            spl = spl[:-1]
             int_spl = [int(x) for x in spl];
             for node in spl:
                 reads[splitted[0]] = int_spl
@@ -69,7 +71,8 @@ if not use_graphviz:
     else:
         #nx.draw(G, node_size=7, pos = nx.nx_pydot.graphviz_layout(G), with_labels=True)
         nx.draw(G, node_size=7, pos = nx.nx_pydot.graphviz_layout(G))
-    plt.show()
+    plt.savefig('out.pdf')
+    plt.plot('out.pdf')
 else:
     file = open(sys.argv[1],'r')
     G = graphviz.Digraph(format='png', strict=False)
