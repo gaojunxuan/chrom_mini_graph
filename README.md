@@ -12,18 +12,29 @@ chrom_mini_graph creates a chromatic (coloured) minimizer pangenome graph.
 git clone https://github.com/bluenote-1577/chrom_mini_graph
 cd chrom_mini_graph
 cargo build --release
-./target/release/chrom_mini_graph test_refs/*
+./target/release/chrom_mini_graph generate test_refs/*
+./target/release/chrom_mini_graph map serialized_mini_graph.bin test_reads/hg_01243_pacbio_reads.fastq > output.txt
 ```
 
 `cargo build --release` builds the **chrom_mini_graph** binary, which is found in the ./target/release/ directory. 
 
 ## Using chrom_mini_graph
 
-`./target/release/chrom_mini_graph ref_1.fasta ref_2.fasta ...` to create a coloured minimizer pangenome graph for references ref_1.fasta, ref_2.fasta, etc. 
+### chrom_mini_graph generate
+
+`./target/release/chrom_mini_graph generate ref_1.fasta ref_2.fasta ...` to create a coloured minimizer pangenome graph for references ref_1.fasta, ref_2.fasta, etc. 
 
 6 reference 1M bp segments of chromosome 20 are provided in the test_ref folder. 
 
 To modify the parameters such as w, k, or even use syncmers instead of minimizers, see the parameters in the `src/bin/chrom_mini_graph.rs` file.
+
+### chrom_mini_graph map
+
+A proof of concept read-to-graph mapper by mapping reads onto the graph without knowledge of colour, and then outputting the scores corresponding to each colouring.
+
+`./target/release/chrom_mini_graph map (output_from_generate.bin) (your_reads.fastq) > output.txt`
+
+For each read, the scores corresponding to each color is output in the form (Score, Colour) where colour is an integer corresponding to a bit. The file read_anchor_hits.txt gives the chains for each read in terms of nodes on the graph. 
 
 ## Issues
 
@@ -39,7 +50,7 @@ This is a CSV file which indicates the edges for the entire graph.
 
 ### simpilified_mini_graph.csv
 
-TODO: This is a simplified version of the full_mini_graph.csv file. Not working for multi-edges right now, I will fix this later. 
+This is a simplified version of the full_mini_graph.csv file. 
 
 ### serialized_mini_graph.json
 
@@ -47,4 +58,4 @@ This is the JSON serialization for the entire graph. See [this document](https:/
 
 ### Visualization
 
-To quickly visualize the graph, do `python visualize_graph.py full_mini_graph.csv`. The parameters in the `visualize_graph.py` file can be changed to visualize different sections of the graph. You need networkx, graphviz, matplotlib installed.
+To quickly visualize the graph, do `python visualize_graph.py full_mini_graph.csv 26000 27000`. All nodes with ids between 26000 and 27000 will be visualized here. You need networkx, graphviz, matplotlib installed.
