@@ -34,7 +34,7 @@ A proof of concept read-to-graph mapper by mapping reads onto the graph without 
 
 `./target/release/chrom_mini_graph map (output_from_generate.bin) (your_reads.fastq) > output.txt`
 
-For each read, the scores corresponding to each color is output in the form (Score, Colour) where colour is an integer corresponding to a bit. The file read_anchor_hits.txt gives the chains for each read in terms of nodes on the graph. 
+For each read, the scores corresponding to each color is output in the form (Score, Colour) where colour is an integer corresponding to a bit. The file read_anchor_hits.txt gives the chains for each read in terms of nodes (the numbers are _orders_ of the nodes, not the IDs) on the graph. 
 
 ## Issues
 
@@ -43,7 +43,7 @@ For each read, the scores corresponding to each color is output in the form (Sco
 3. If two contigs are dissimilar, the graph generation may be very poor. We find the best alignment and align no matter what; we don't check if the alignment is actually good or not. 
 4. Reverse complements don't work in any shape or form so be careful.
 
-## Output
+## Outputs
 
 ### full_mini_graph.csv 
 
@@ -51,7 +51,7 @@ This is a CSV file which indicates the edges for the entire graph.
 
 ### simpilified_mini_graph.csv
 
-This is a simplified version of the full_mini_graph.csv file. 
+This is a simplified version of the full_mini_graph.csv file. Linear paths are shortened. 
 
 ### serialized_mini_graph.json
 
