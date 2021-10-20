@@ -82,7 +82,7 @@ fn main() {
     //don't use chain_heuristic; it is the minimap2 heuristic and works poorly
     //on long contigs.
     let chain_heuristic = false;
-    let w = 13;
+    let w = 16;
     let k = 16;
     let mask_repet_on_generate = false;
     let s = 10;

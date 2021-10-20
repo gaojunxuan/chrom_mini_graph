@@ -340,7 +340,7 @@ where
     pub fn update_query_info(&mut self, value: T, qvalue: f64, anchor_id: usize, node_id_ref: usize, node_id_query: usize) {
         //Need to update leaf nodes too.
         let mut current_index = self.root;
-        let mut found_node_index = 0;
+        let mut found_node_index = None;
         while let Some(index) = current_index {
             if value > self.nodes[index].value {
                 current_index = self.nodes[index].right_child;
@@ -348,9 +348,14 @@ where
                 current_index = self.nodes[index].left_child;
             } else {
                 //found the node
-                found_node_index = current_index.unwrap();
+                found_node_index = Some(current_index.unwrap());
                 break;
             }
+        }
+
+        if let None = found_node_index{
+            dbg!(value,qvalue,anchor_id);
+            panic!();
         }
 
         //Update info on the node
@@ -372,7 +377,7 @@ where
 
             let curr_node = &mut self.nodes[index];
             if curr_node_point_qvalue < qvalue {
-                curr_node.smallest_child_index = Some(found_node_index);
+                curr_node.smallest_child_index = found_node_index;
             }
 
             current_index = curr_node.parent;
@@ -481,11 +486,13 @@ where
                     let rc_node = &self.nodes[rc];
                     if let Some(small_ind) = rc_node.smallest_child_index {
                         let right_child_node_pointer = &self.nodes[small_ind];
+                        //This means that left is the root, so the initial left index was the index
+                        //of the root.
                         if right_child_node_pointer.value > right {
-                            dbg!(&right, &left, right_child_node_pointer, curr_node);
-                            dbg!(&self.nodes[curr_node.left_child.unwrap()]);
-                            dbg!(&self.nodes[curr_node.right_child.unwrap()]);
-                            panic!();
+//                            dbg!(&right, &left, right_child_node_pointer, curr_node);
+//                            dbg!(&self.nodes[curr_node.left_child.unwrap()]);
+//                            dbg!(&self.nodes[curr_node.right_child.unwrap()]);
+                            break;
                         }
                         v_p.push((
                             right_child_node_pointer.qvalue as i64,
