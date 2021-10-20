@@ -34,7 +34,13 @@ A proof of concept read-to-graph chainer by chaining minimizers in the read onto
 
 `./target/release/chrom_mini_graph map (output_from_generate.bin) (your_reads.fastq) > output.txt`
 
-For each read, the scores corresponding to each color is output in the form (Score, Colour) where colour is an integer corresponding to a bit. The file read_anchor_hits.txt gives the chains for each read in terms of nodes (the numbers are _orders_ of the nodes, not the IDs) on the graph. 
+For each read, the scores corresponding to each color is output in the form (Score, Colour) where colour is an integer corresponding to a bit. For example, using the `hg_01243_pacbio_reads.fastq` reads given in the `test_reads` folder and mapping onto the example minimizer graph, we get 
+
+[(32, 3727.0, 0), (16, 3759.0, 0), (8, 3724.0, 0), (4, 3758.0, 0), (2, 3949.0, 0), (1, 3821.0, 0)]
+
+indicating that the colour corrresponding to 2 has the highest score; this is expected since hg01243 corresponds to the second smallest bit. 
+
+The file read_anchor_hits.txt gives the chains for each read in terms of nodes (the numbers are _orders_ of the nodes, not the IDs) on the graph. 
 
 ## Issues
 
