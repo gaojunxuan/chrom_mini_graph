@@ -41,6 +41,7 @@ For each read, the scores corresponding to each color is output in the form (Sco
 1. Aligning two big contigs (chromosomes) takes a long time right now; > 2000 seconds. This is caused by extremely repetitive kmers creating too many anchors. Will work on removing repetitive k-mers later on (i.e. masking repetitive kmers).
 2. **Make sure there are no stretches of N's in the reference file!**. These Ns will cause chaining to take a long time, because the Ns are converted to As in the code and repetitive k-mers cause the number of anchors to blow up. I just removed the Ns from the reference.
 3. If two contigs are dissimilar, the graph generation may be very poor. We find the best alignment and align no matter what; we don't check if the alignment is actually good or not. 
+4. Reverse complements don't work in any shape or form so be careful.
 
 ## Output
 
