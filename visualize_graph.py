@@ -17,6 +17,7 @@ if not use_graphviz:
     graph_deserial = []
     reads = dict()
     color = False
+    labels = False
 
     if len(sys.argv) > 4:
         color = True
@@ -35,7 +36,7 @@ if not use_graphviz:
                 reads[splitted[0]] = int_spl
 
 
-    G = nx.DiGraph()
+    G = nx.Graph()
     for line in file:
         sp = line.split(',')
         n1 = int(sp[0].split('-')[0])
@@ -54,7 +55,7 @@ if not use_graphviz:
         node_s = []
         for n_order in G:
             inside = False
-            if order_to_id[n_order] in reads[read_to_check]:
+            if read_to_check in reads and order_to_id[n_order] in reads[read_to_check]:
                 inside = True
                 #print(n_order)
                 node_s.append(105)
@@ -62,17 +63,19 @@ if not use_graphviz:
                 node_s.append(5)
 
             node_color = graph_deserial[order_to_id[n_order]]['color']
-            if node_color & bit == bit:
+            if node_color & bit== bit:
                 cmap.append('red')
+            elif node_color & 2 == 2:
+                cmap.append('green')
             else:
                 cmap.append('blue')
 
-        nx.draw(G, node_size=node_s, pos = nx.nx_pydot.graphviz_layout(G), node_color = cmap)
+        nx.draw(G, node_size=node_s, pos = nx.nx_pydot.graphviz_layout(G), node_color = cmap, with_labels=labels)
     else:
         #nx.draw(G, node_size=7, pos = nx.nx_pydot.graphviz_layout(G), with_labels=True)
         nx.draw(G, node_size=7, pos = nx.nx_pydot.graphviz_layout(G))
-    plt.savefig('out.pdf')
-    plt.plot('out.pdf')
+    plt.plot()
+    plt.show()
 else:
     file = open(sys.argv[1],'r')
     G = graphviz.Digraph(format='png', strict=False)

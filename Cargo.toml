@@ -13,6 +13,7 @@ fxhash = "*"
 debruijn = "*"
 disjoint-sets = "*"
 smallvec = { version = "*", features = ["union","serde"] }
+block-aligner = { version = "^0.2.0", features = ["simd_avx2"] }
 serde = "*"
 serde_json = "1.0"
 clap = "*"

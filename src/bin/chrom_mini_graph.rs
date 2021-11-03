@@ -1,5 +1,10 @@
 use bincode;
-use bio::io::{fasta,fastq};
+use bio::alignment::pairwise::*;
+use bio::io::{fasta, fastq};
+use block_aligner::cigar::*;
+use block_aligner::scan_block::*;
+use block_aligner::scores::*;
+use chrom_mini_graph::align;
 use chrom_mini_graph::chain;
 use chrom_mini_graph::data_structs::KmerNode;
 use chrom_mini_graph::graph_utils;
@@ -8,6 +13,7 @@ use clap::{App, AppSettings, Arg, SubCommand};
 use debruijn::dna_string::*;
 use debruijn::kmer::Kmer16;
 use debruijn::Kmer;
+use debruijn::Mer;
 use fxhash::{FxHashMap, FxHashSet};
 use std::fs::File;
 use std::io::prelude::*;
@@ -15,7 +21,7 @@ use std::io::{BufReader, BufWriter};
 use std::time::Instant;
 
 fn main() {
-    let matches = App::new("chrom_mini_graph")
+    let matches = App::new("meta-cmg")
         .setting(AppSettings::ArgRequiredElseHelp)
         .version("0.1")
         .about("Chromatic minimizer pangenome graph program.")
@@ -41,6 +47,11 @@ fn main() {
                     Arg::with_name("syncmer")
                         .short("s")
                         .help("Use syncmers. (Default: use minimizers)")
+                ).
+                arg(
+                    Arg::with_name("circular")
+                        .short("c")
+                        .help("Assume that the genomes are circular. (Default: not circular)")
                 )
         )
         .subcommand(
@@ -63,6 +74,11 @@ fn main() {
                     Arg::with_name("syncmer")
                         .short("s")
                         .help("Use syncmers. (Default: use minimizers)")
+                ).
+                arg(
+                    Arg::with_name("dont_output_stuff")
+                        .short("u")
+                        .help("Output auxillary info (Default: on) ")
                 )
         )
         .get_matches();
@@ -81,43 +97,61 @@ fn main() {
     //
     //don't use chain_heuristic; it is the minimap2 heuristic and works poorly
     //on long contigs.
+    let use_block = true;
     let chain_heuristic = false;
+    let circular;
+    if matches_subc.is_present("circular") {
+        circular = true;
+    }
+    else {
+       circular = false; 
+    }
+
     let w = 16;
     let k = 16;
     let mask_repet_on_generate = false;
     let s = 10;
     let t = (k - s + 2) / 2 as usize;
-    let h = 10;
+    let h = 30;
+    let samp_freq = 100;
     //use syncmers if not using minimizers
 
     let use_minimizers;
-    if matches_subc.is_present("syncmer"){
+    if matches_subc.is_present("syncmer") {
         use_minimizers = false;
-    }
-    else{
+    } else {
         use_minimizers = true;
     }
 
     if generate {
         let ref_genomes: Vec<&str> = matches_subc.values_of("references").unwrap().collect();
         let mut chroms = vec![];
+        let mut good_chroms = vec![];
 
         for i in 0..ref_genomes.len() {
             let reader = fasta::Reader::from_file(&ref_genomes[i]);
             for record in reader.unwrap().records() {
                 let rec = record.unwrap();
+                let rec_id = rec.desc();
+                if let Some(rec_id_str) = rec_id{
+                    if rec_id_str.contains("plasmid") {
+                        continue;
+                    }
+                }
                 let chrom = DnaString::from_acgt_bytes(rec.seq());
-                chroms.push(chrom);
+                chroms.push((chrom, true));
                 println!("{}-th reference is {}.", i, ref_genomes[i]);
             }
         }
 
+        good_chroms.push((chroms[0].0.clone(), true));
+
         let mut seeds1;
         let seed_p1;
         if use_minimizers {
-            seed_p1 = seeding_methods_bit::minimizer_seeds(&chroms[0], w, k);
+            seed_p1 = seeding_methods_bit::minimizer_seeds(&chroms[0].0, w, k, samp_freq);
         } else {
-            seed_p1 = seeding_methods_bit::open_sync_seeds(&chroms[0], k, t);
+            seed_p1 = seeding_methods_bit::open_sync_seeds(&chroms[0].0, k, t, samp_freq);
         }
         seeds1 = seed_p1.0;
         let p1 = seed_p1.1;
@@ -128,16 +162,21 @@ fn main() {
             seeds1.len()
         );
 
+        let mut aln_score_array = vec![];
+        let mut mean_score = 0.0;
+
         for i in 1..chroms.len() {
-            println!("-----------------Iteration {}-------------------", i);
             let old_graph_len = seeds1.len();
-            let seeds2;
+            let genome_string = &chroms[i].0;
+
+            println!("-----------------Iteration {}-------------------", i);
+            let mut seeds2;
             let now = Instant::now();
             let s2;
             if use_minimizers {
-                s2 = seeding_methods_bit::minimizer_seeds(&chroms[i], w, k);
+                s2 = seeding_methods_bit::minimizer_seeds(genome_string, w, k, 1);
             } else {
-                s2 = seeding_methods_bit::open_sync_seeds(&chroms[i], k, t);
+                s2 = seeding_methods_bit::open_sync_seeds(genome_string, k, t, 1);
             }
             seeds2 = s2.0;
             println!(
@@ -148,7 +187,6 @@ fn main() {
             let ref_hash_map = chain::get_kmer_dict_mut(&mut seeds1);
             let q_hash_map = chain::get_kmer_dict(&seeds2);
 
-            ///Test
             let mut kmer_count_dict = FxHashMap::default();
             for node in seeds1.iter() {
                 let count_num = kmer_count_dict.entry(node.kmer).or_insert(0);
@@ -159,28 +197,55 @@ fn main() {
             hash_vec.sort_by(|a, b| b.1.cmp(a.1));
             let mut dont_use_kmers = FxHashSet::default();
 
-            for i in 0..hash_vec.len() / 10000 as usize {
+            for i in 0..hash_vec.len() / 1000 as usize {
                 dont_use_kmers.insert(hash_vec[i].0);
             }
-            ///
             if !mask_repet_on_generate {
                 dont_use_kmers = FxHashSet::default();
             }
 
-            let best_anchors = chain::chain_seeds(
+            let (best_anchors, aln_score, forward_strand) = chain::chain_seeds(
                 &mut seeds1,
-                &seeds2,
+                &mut seeds2,
                 &ref_hash_map,
                 &q_hash_map,
                 h,
                 chain_heuristic,
                 false,
                 &dont_use_kmers,
+                circular,
             );
-            println!("Chaining time: {}", now.elapsed().as_secs_f32());
+
+            if !forward_strand {
+                chroms[i].1 = false;
+            }
+
+            println!(
+                "Chaining time and aln_score and strand: {},{},{}",
+                now.elapsed().as_secs_f32(),
+                aln_score,
+                forward_strand
+            );
+
+            println!("Aln score, mean score {},{}", aln_score, mean_score);
+            if aln_score < 0.75 * mean_score {
+                println!("Bad alignment. Continuing");
+                continue;
+            }
+            good_chroms.push((chroms[i].0.clone(), forward_strand));
+
+            mean_score = (mean_score * (i - 1) as f64 + aln_score) / (i as f64);
+            aln_score_array.push(aln_score);
 
             let now = Instant::now();
-            chain::add_align_to_graph(&mut seeds1, seeds2, best_anchors);
+            graph_utils::add_align_to_graph(
+                &mut seeds1,
+                seeds2,
+                best_anchors,
+                forward_strand,
+                samp_freq,
+                circular,
+            );
             println!(
                 "Generating graph from alignment time: {}",
                 now.elapsed().as_secs_f32()
@@ -193,7 +258,7 @@ fn main() {
                 seeds1.len() - old_graph_len
             );
 
-            chain::top_sort(&mut seeds1);
+            graph_utils::top_sort(&mut seeds1);
             println!("Top sort time: {}.", now.elapsed().as_secs_f32());
         }
 
@@ -241,7 +306,7 @@ fn main() {
 
         let now = Instant::now();
         let mut file_bin = BufWriter::new(File::create(serial_bin_name).unwrap());
-        bincode::serialize_into(&mut file_bin, &seeds1).unwrap();
+        bincode::serialize_into(&mut file_bin, &(&seeds1, &good_chroms)).unwrap();
         println!(
             "Serializing and writing time {}.",
             now.elapsed().as_secs_f32()
@@ -258,13 +323,15 @@ fn main() {
             }
         }
     } else {
+        let dont_output_stuff = matches_subc.is_present("dont_output_stuff");
         let ref_graph_file = matches_subc.value_of("reference_graph").unwrap();
         let ref_graph_f = File::open(ref_graph_file).unwrap();
         let ref_graph_reader = BufReader::new(ref_graph_f);
 
-        let mut ref_graph: Vec<KmerNode> = bincode::deserialize_from(ref_graph_reader).unwrap();
+        let (mut ref_graph, chroms): (Vec<KmerNode>, Vec<(DnaString, bool)>) =
+            bincode::deserialize_from(ref_graph_reader).unwrap();
 
-        let order_to_id = chain::top_sort(&mut ref_graph);
+        let order_to_id = graph_utils::top_sort(&mut ref_graph);
         let mut kmer_count_dict = FxHashMap::default();
 
         for node in ref_graph.iter() {
@@ -296,13 +363,13 @@ fn main() {
         let mut anchor_file = BufWriter::new(File::create("read_anchor_hits.txt").unwrap());
 
         for (read, id) in reads {
-            let read_seeds;
+            let mut read_seeds;
             //            let now = Instant::now();
             let s2;
             if use_minimizers {
-                s2 = seeding_methods_bit::minimizer_seeds(&read, w, k);
+                s2 = seeding_methods_bit::minimizer_seeds(&read, w, k, 1);
             } else {
-                s2 = seeding_methods_bit::open_sync_seeds(&read, k, t);
+                s2 = seeding_methods_bit::open_sync_seeds(&read, k, t, 1);
             }
 
             //            println!(
@@ -313,28 +380,169 @@ fn main() {
             read_seeds = s2.0;
             let q_hash_map = chain::get_kmer_dict(&read_seeds);
             let now = Instant::now();
-            let best_anchors = chain::chain_seeds(
+            let (best_anchors, aln_score, _strand) = chain::chain_seeds(
                 &mut ref_graph,
-                &read_seeds,
+                &mut read_seeds,
                 &ref_hash_map,
                 &q_hash_map,
                 h,
                 chain_heuristic,
                 true,
-                &dont_use_kmers,
-                //&FxHashSet::default(),
+                //                &dont_use_kmers,
+                &FxHashSet::default(),
+                circular,
             );
 
-            write!(&mut anchor_file, "{}:", id).unwrap();
-            for anchor in best_anchors.iter() {
-                write!(&mut anchor_file, "{},", anchor.0).unwrap();
+            if !dont_output_stuff {
+                write!(&mut anchor_file, "{}:", id).unwrap();
+                for anchor in best_anchors.iter() {
+                    write!(&mut anchor_file, "{},", anchor.0).unwrap();
+                }
+                write!(&mut anchor_file, "\n").unwrap();
             }
-            write!(&mut anchor_file, "\n").unwrap();
             println!("Read: {}", id);
             println!("Chaining time: {}", now.elapsed().as_secs_f32());
             let now = Instant::now();
-            chain::get_best_path_from_chain(best_anchors, &ref_graph, &order_to_id);
+            let (best_color, best_anchors) = chain::get_best_path_from_chain2(
+                best_anchors,
+                &ref_graph,
+                &order_to_id,
+                read_seeds.len() as u32,
+            );
+
+            if best_anchors.len() < 5 {
+                println!("Less than 5 anchors, bad align");
+                println!("Alignment score: NA");
+                continue;
+            }
+
             println!("Path collection time: {}", now.elapsed().as_secs_f32());
+            let ref_chrom =
+                &chroms[chroms.len() - align::get_first_nonzero_bit(best_color as usize) - 1].0;
+            let strand_chrom =
+                &chroms[chroms.len() - align::get_first_nonzero_bit(best_color as usize) - 1].1;
+            let now = Instant::now();
+            let (_ref_coords, kmer_hit_coords) =
+                align::get_coords(&best_anchors, &ref_graph, &read_seeds, best_color, &chroms);
+            println!("Get interval align time: {}", now.elapsed().as_secs_f32());
+            if kmer_hit_coords.len() < 5 {
+                println!("Less than 5 kmer hits, bad align");
+                println!("Alignment score: NA");
+                continue;
+            }
+            //            dbg!(kmer_hit_coords[0]);
+            //            dbg!(kmer_hit_coords[1]);
+            //            dbg!(kmer_hit_coords.last().unwrap());
+            for (i, (c1, c2)) in kmer_hit_coords.iter().enumerate() {
+                let adj_c1;
+                if *c1 >= ref_chrom.len() as i64{
+                    adj_c1 = c1 - ref_chrom.len() as i64;
+                }
+                else if *c1 < 0{
+                    adj_c1 = ref_chrom.len() as i64 + *c1;
+                }
+                else{
+                    adj_c1 = *c1;
+                }
+                let node = &read_seeds[best_anchors[i].1 as usize];
+                let r_node = &ref_graph[best_anchors[i].0 as usize];
+                let d1 = read.slice(*c2, *c2 + 16).to_string();
+                let d2 = node.kmer.to_string();
+                let d3 = node.kmer.rc().to_string();
+                let d4 = ref_chrom.slice(adj_c1 as usize, adj_c1 as usize+ 16).to_string();
+                let d5 = ref_chrom.slice(adj_c1 as usize, adj_c1 as usize + 16).rc().to_string();
+                let d6 = read.slice(*c2, *c2 + 16).rc().to_string();
+                if d1 != d4 && d1 != d5 {
+                    println!("NOT FOUND {} ! read and ref {} {} {} {}", i, d1, d6, d4, d5);
+                }
+                if d1 != d2 && d1 != d3 {
+                    println!("NOT FOUND {} ! read and node {} {} {}", i, d1, d2, d3);
+                }
+            }
+            let space = 100;
+            let test1;
+            if *strand_chrom {
+                let a = kmer_hit_coords[0].0;
+                let b;
+                if kmer_hit_coords.last().unwrap().0 < a{
+                    b = ref_chrom.len() as i64;
+                    println!("Circular mapping b. Cut off TODO");
+                }
+                else{
+                    b = kmer_hit_coords.last().unwrap().0 + 16;
+                }
+                test1 = ref_chrom
+                    //                .slice(kmer_hit_coords[0].0, kmer_hit_coords[0].0 + 500)
+//                    .slice(kmer_hit_coords[0].0, kmer_hit_coords.last().unwrap().0 + 16)
+                    .slice(a as usize,b as usize)
+                    .to_string();
+            } else {
+                let a;
+                let b = kmer_hit_coords[0].0 + 16;
+                if kmer_hit_coords.last().unwrap().0 < 0{
+                    a = 0;
+                    println!("Circular mapping a. Cut off TODO");
+                }
+                else{
+                    a = kmer_hit_coords.last().unwrap().0;
+                }
+                test1 = ref_chrom
+                    //                .slice(kmer_hit_coords[0].0, kmer_hit_coords[0].0 + 500)
+//                    .slice(kmer_hit_coords.last().unwrap().0, kmer_hit_coords[0].0 + 16)
+                    .slice(a as usize,b as usize)
+                    .rc()
+                    .to_string();
+            }
+            let test2;
+            if _strand {
+                test2 = read
+                    .slice(kmer_hit_coords[0].1, kmer_hit_coords.last().unwrap().1 + 16)
+                    .to_string();
+            } else {
+                test2 = read
+                    .slice(kmer_hit_coords.last().unwrap().1, kmer_hit_coords[0].1 + 16)
+                    .rc()
+                    .to_string();
+            }
+
+            //            println!("{},{}", test1, test2);
+
+            if use_block {
+                let now = Instant::now();
+                let block_size = 16;
+                let r = PaddedBytes::from_string::<NucMatrix>(test1, block_size);
+                let q = PaddedBytes::from_string::<NucMatrix>(test2, block_size);
+                let gaps = Gaps {
+                    open: -2,
+                    extend: -1,
+                };
+
+                let a =
+                    Block::<_, true, false>::align(&q, &r, &NW1, gaps, block_size..=block_size, 50);
+
+                let res = a.res();
+                println!(
+                    "{}",
+                    a.trace()
+                        .cigar(res.query_idx, res.reference_idx)
+                        .to_string()
+                );
+                println!("Aligning time: {}", now.elapsed().as_secs_f32());
+                println!("Alignment score: {}", res.score);
+            } else {
+                use bio::alignment::pairwise::banded::*;
+                use bio::alignment::sparse::hash_kmers;
+
+                let score = |a: u8, b: u8| if a == b { 1i32 } else { -1i32 };
+                let mut aligner = Aligner::new(-5, -1, score, k, w);
+                let now = Instant::now();
+                let y_kmers_hash = hash_kmers(test2.as_bytes(), 16);
+                let alignment = aligner.semiglobal_with_prehash(test1.as_bytes(), test2.as_bytes(), &y_kmers_hash);
+//                assert_eq!(alignment.score, 37);
+//                let alignment = aligner.custom(&test1.as_bytes(), &test2.as_bytes());
+                println!("{}", alignment.cigar(false));
+                println!("Aligning time: {}", now.elapsed().as_secs_f32());
+            }
         }
     }
 }

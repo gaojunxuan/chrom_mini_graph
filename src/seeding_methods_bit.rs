@@ -1,11 +1,12 @@
+use crate::data_structs::KmerNode;
 use debruijn::dna_string::*;
-use debruijn::kmer::Kmer8;
 use debruijn::kmer::Kmer10;
 use debruijn::kmer::Kmer12;
 use debruijn::kmer::Kmer16;
+use debruijn::kmer::Kmer8;
+use debruijn::Mer;
 use debruijn::Vmer;
 use fxhash::hash;
-use crate::data_structs::KmerNode;
 use smallvec::SmallVec;
 
 fn position_min<T: Ord>(slice: &[T]) -> Option<usize> {
@@ -16,17 +17,32 @@ fn position_min<T: Ord>(slice: &[T]) -> Option<usize> {
         .map(|(idx, _)| idx)
 }
 
-pub fn minimizer_seeds(s: &DnaString, w: usize, k: usize) -> (Vec<KmerNode>, Vec<u32>) {
-    let mut minimizer_seeds:Vec<KmerNode> = vec![];
+pub fn minimizer_seeds(
+    s: &DnaString,
+    w: usize,
+    k: usize,
+    samp_freq: usize,
+) -> (Vec<KmerNode>, Vec<u32>) {
+    let mut minimizer_seeds: Vec<KmerNode> = vec![];
     let mut positions_selected: Vec<u32> = Vec::new();
 
     //look at windows
     let mut running_pos = 0;
     let mut min_running_pos = usize::MAX;
     let mut window_hashes = vec![0; w];
-    for i in 0..s.len() - k + 1{
+    if s.len() < k + 1{
+        return (vec![], vec![]);
+    }
+    for i in 0..s.len() - k + 1 {
         let kmer: Kmer16 = s.slice(i, i + k).get_kmer(0);
-        window_hashes[running_pos] = hash(&kmer);
+        let rc_kmer = kmer.rc();
+        let hash_kmer;
+        if kmer < rc_kmer {
+            hash_kmer = kmer;
+        } else {
+            hash_kmer = rc_kmer;
+        }
+        window_hashes[running_pos] = hash(&hash_kmer);
         if i < w - 1 {
             continue;
         }
@@ -36,7 +52,7 @@ pub fn minimizer_seeds(s: &DnaString, w: usize, k: usize) -> (Vec<KmerNode>, Vec
         } else {
             if min_running_pos == running_pos {
                 min_running_pos = position_min(&window_hashes).unwrap();
-                if window_hashes[min_running_pos] == window_hashes[running_pos]{
+                if window_hashes[min_running_pos] == window_hashes[running_pos] {
                     min_running_pos = running_pos;
                 }
             } else {
@@ -58,36 +74,68 @@ pub fn minimizer_seeds(s: &DnaString, w: usize, k: usize) -> (Vec<KmerNode>, Vec
         }
 
         let kmer: Kmer16 = s.slice(i - offset, i - offset + k).get_kmer(0);
-        let kmer_node = KmerNode{
-            kmer: kmer,
-            id: positions_selected.len() as u32,
-            order: positions_selected.len() as u32,
+        let canonical;
+        let mut node_kmer = kmer.rc();
+        if node_kmer < kmer {
+            canonical = false;
+        } else {
+            canonical = true;
+            node_kmer = kmer;
+        }
+        positions_selected.push((i - offset) as u32);
+        let mut kmer_node = KmerNode {
+            kmer: node_kmer,
+            id: positions_selected.len() as u32 - 1,
+            order: positions_selected.len() as u32 - 1,
             color: 1,
             child_nodes: SmallVec::<[u32; 1]>::new(),
-            child_edge_distance: SmallVec::<[u8; 1]>::new()
-//            child_nodes: vec![],
+            child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
+            //            child_nodes: vec![],
+            canonical: canonical,
+            actual_ref_positions: SmallVec::<[usize; 0]>::new(),
         };
+        if positions_selected.len() % samp_freq == 0 {
+            kmer_node
+                .actual_ref_positions
+                .push(*positions_selected.last().unwrap() as usize);
+        }
+
         minimizer_seeds.push(kmer_node);
         //        let pos_vec = minimizer_seeds
         //            .entry(kmer)
         //            .or_insert(FxHashSet::default());
         //        pos_vec.insert(i-offset);
-        positions_selected.push((i - offset) as u32);
 
         running_pos += 1;
         running_pos %= w;
     }
 
-    for i in 0..minimizer_seeds.len()-1{
-        minimizer_seeds[i].child_nodes.push((i+1) as u32);
-        let dist_on_genome = positions_selected[i+1] - positions_selected[i];
-        minimizer_seeds[i].child_edge_distance.push(dist_on_genome as u8);
+    for i in 0..minimizer_seeds.len() {
+        if i == minimizer_seeds.len() - 1 {
+            minimizer_seeds[i].child_nodes.push(0 as u32);
+            //TODO this is incorrect
+            let dist_on_genome = positions_selected[0] + s.len() as u32 - positions_selected[i];
+            minimizer_seeds[i]
+                .child_edge_distance
+                .push((dist_on_genome as u8, (1, 0)));
+        } else {
+            minimizer_seeds[i].child_nodes.push((i + 1) as u32);
+            let dist_on_genome = positions_selected[i + 1] - positions_selected[i];
+            minimizer_seeds[i]
+                .child_edge_distance
+                .push((dist_on_genome as u8, (1, 0)));
+        }
     }
 
     return (minimizer_seeds, positions_selected);
 }
 
-pub fn open_sync_seeds(string: &DnaString, k: usize, t: usize) -> (Vec<KmerNode>, Vec<u32>) {
+pub fn open_sync_seeds(
+    string: &DnaString,
+    k: usize,
+    t: usize,
+    samp_freq: usize,
+) -> (Vec<KmerNode>, Vec<u32>) {
     let s = 10;
     let mut syncmer_seeds = vec![];
     let mut positions_selected: Vec<u32> = Vec::new();
@@ -98,9 +146,16 @@ pub fn open_sync_seeds(string: &DnaString, k: usize, t: usize) -> (Vec<KmerNode>
     let mut min_running_pos = usize::MAX;
     let mut window_hashes = vec![0; w];
 
-    for i in 0..string.len() - s + 1{
+    for i in 0..string.len() - s + 1 {
         let smer: Kmer10 = string.slice(i, i + s).get_kmer(0);
-        window_hashes[running_pos] = hash(&smer);
+        let rc_smer = smer.rc();
+        let hash_smer;
+        if smer < rc_smer {
+            hash_smer = smer;
+        } else {
+            hash_smer = rc_smer;
+        }
+        window_hashes[running_pos] = hash(&hash_smer);
         if i < w - 1 {
             continue;
         }
@@ -118,34 +173,64 @@ pub fn open_sync_seeds(string: &DnaString, k: usize, t: usize) -> (Vec<KmerNode>
         }
 
         if running_pos > min_running_pos {
-            if running_pos - min_running_pos == t-1 {
-                let kmer: Kmer16 = string.slice(i-w+1, i-w+1+k).get_kmer(0);
-                let kmer_node = KmerNode{
-                    kmer: kmer,
-                    id: positions_selected.len() as u32,
-                    order: positions_selected.len() as u32,
+            if running_pos - min_running_pos == t - 1 {
+                let kmer: Kmer16 = string.slice(i - w + 1, i - w + 1 + k).get_kmer(0);
+                let canonical;
+                let mut node_kmer = kmer.rc();
+                if node_kmer < kmer {
+                    canonical = false;
+                } else {
+                    canonical = true;
+                    node_kmer = kmer;
+                }
+                positions_selected.push((i + 1 - w) as u32);
+                let mut kmer_node = KmerNode {
+                    kmer: node_kmer,
+                    id: positions_selected.len() as u32 - 1,
+                    order: positions_selected.len() as u32 - 1,
                     color: 1,
                     child_nodes: SmallVec::<[u32; 1]>::new(),
-                    child_edge_distance: SmallVec::<[u8; 1]>::new()
-//                    child_nodes: vec![],
-                    };
+                    child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
+                    canonical: canonical, //                    child_nodes: vec![],
+                    actual_ref_positions: SmallVec::<[usize; 0]>::new(),
+                };
 
-                positions_selected.push(i as u32);
+                if positions_selected.len() % samp_freq == 0 {
+                    kmer_node
+                        .actual_ref_positions
+                        .push(*positions_selected.last().unwrap() as usize);
+                }
+
                 syncmer_seeds.push(kmer_node);
             }
         } else {
-            if w - (min_running_pos - running_pos) == t-1 {
-                let kmer: Kmer16 = string.slice(i+1-w, i+1+k-w).get_kmer(0);
-                let kmer_node = KmerNode{
-                    kmer: kmer,
-                    id: positions_selected.len() as u32,
-                    order: positions_selected.len() as u32,
+            if w - (min_running_pos - running_pos) == t - 1 {
+                let kmer: Kmer16 = string.slice(i + 1 - w, i + 1 + k - w).get_kmer(0);
+                let canonical;
+                let mut node_kmer = kmer.rc();
+                if node_kmer < kmer {
+                    canonical = false;
+                } else {
+                    canonical = true;
+                    node_kmer = kmer;
+                }
+                positions_selected.push((i + 1 - w) as u32);
+                let mut kmer_node = KmerNode {
+                    kmer: node_kmer,
+                    id: positions_selected.len() as u32 - 1,
+                    order: positions_selected.len() as u32 - 1,
                     color: 1,
                     child_nodes: SmallVec::<[u32; 1]>::new(),
-                    child_edge_distance: SmallVec::<[u8; 1]>::new()
-//                    child_nodes: vec![],
-                    };
-                positions_selected.push(i as u32);
+                    child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
+                    canonical: canonical, //                    child_nodes: vec![],
+                    actual_ref_positions: SmallVec::<[usize; 0]>::new(),
+                };
+                if positions_selected.len() % samp_freq == 0 {
+                    kmer_node
+                        .actual_ref_positions
+                        .push(*positions_selected.last().unwrap() as usize);
+                }
+
                 syncmer_seeds.push(kmer_node);
             }
         }
@@ -154,10 +239,21 @@ pub fn open_sync_seeds(string: &DnaString, k: usize, t: usize) -> (Vec<KmerNode>
         running_pos %= w;
     }
 
-    for i in 0..syncmer_seeds.len()-1{
-        syncmer_seeds[i].child_nodes.push((i+1) as u32);
-        let dist_on_genome = positions_selected[i+1] - positions_selected[i];
-        syncmer_seeds[i].child_edge_distance.push(dist_on_genome as u8);
+    for i in 0..syncmer_seeds.len() {
+        if i == syncmer_seeds.len() - 1 {
+            syncmer_seeds[i].child_nodes.push(0 as u32);
+            //TODO this is incorrect
+            let dist_on_genome = 1;
+            syncmer_seeds[i]
+                .child_edge_distance
+                .push((dist_on_genome as u8, (1, 0)));
+        } else {
+            syncmer_seeds[i].child_nodes.push((i + 1) as u32);
+            let dist_on_genome = positions_selected[i + 1] - positions_selected[i];
+            syncmer_seeds[i]
+                .child_edge_distance
+                .push((dist_on_genome as u8, (1, 0)));
+        }
     }
 
     return (syncmer_seeds, positions_selected);
