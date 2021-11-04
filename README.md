@@ -13,41 +13,41 @@ git clone https://github.com/bluenote-1577/chrom_mini_graph
 cd chrom_mini_graph
 cargo build --release
 ./target/release/chrom_mini_graph generate test_refs/*
-./target/release/chrom_mini_graph map serialized_mini_graph.bin test_reads/hg_01243_pacbio_reads.fastq > output.txt
+./target/release/chrom_mini_graph map serialized_mini_graph.bin test_reads/hg_01243_pacbio_reads.fastq -b hg-01243-reads.bam > output.txt
 ```
 
-`cargo build --release` builds the **chrom_mini_graph** binary, which is found in the ./target/release/ directory. 
+1. `cargo build --release` first builds the **chrom_mini_graph** binary, which is found in the ./target/release/ directory.
+2. The `chrom_mini_graph generate` command generates a coloured minimizer pangenome graph. 
+3. The `chrom_mini_graph map` command chains onto the graph which is called `serialized_mini_graph.bin`.
+4. The resulting chain is used for alignment and is output to `hg-01243-reads.bam`. 
 
-## Using chrom_mini_graph
+* 6 reference 1M bp segments of chromosome 20 are provided in the test_ref folder. 
+* Simulated PacBio CLR reads for hg01243 are available in the test_reads folder. 
 
-### `generate`
+# Using chrom_mini_graph
 
-`./target/release/chrom_mini_graph generate ref_1.fasta ref_2.fasta ...` to create a coloured minimizer pangenome graph for references ref_1.fasta, ref_2.fasta, etc. 
+## generate
 
-6 reference 1M bp segments of chromosome 20 are provided in the test_ref folder. 
+`chrom_mini_graph generate ref_1.fasta ref_2.fasta ... -o output_from_generate` to create a coloured minimizer pangenome graph for references ref_1.fasta, ref_2.fasta, etc. 
 
-To modify the parameters such as w, k, or even use syncmers instead of minimizers, see the parameters in the `src/bin/chrom_mini_graph.rs` file.
+* The window size can be easily modified in the `src/bin/chrom_mini_graph.rs` file. The default value is 16.
+* Outputs a \*.bin file to be used for mapping and other auxillary information; see below. 
 
-### `map`
+## map
 
 A proof of concept read-to-graph chainer by chaining minimizers in the read onto the graph without knowledge of colour and then outputting the scores corresponding to each colouring.
 
-`./target/release/chrom_mini_graph map (output_from_generate.bin) (your_reads.fastq) > output.txt`
+`chrom_mini_graph map output_from_generate.bin your_reads.fastq -b bam_name.bam > output.txt`
 
-For each read, the scores corresponding to each color is output in the form (Score, Colour) where colour is an integer corresponding to a bit. For example, using the `hg_01243_pacbio_reads.fastq` reads given in the `test_reads` folder and mapping onto the example minimizer graph, we get 
-
-[(32, 3727.0, 0), (16, 3759.0, 0), (8, 3724.0, 0), (4, 3758.0, 0), (2, 3949.0, 0), (1, 3821.0, 0)]
-
-indicating that the colour corrresponding to 2 has the highest score; this is expected since hg01243 corresponds to the second smallest bit. 
-
-The file read_anchor_hits.txt gives the chains for each read in terms of nodes (the numbers are _orders_ of the nodes, not the IDs) on the graph. 
+* In stdout, information about each alignment is output.
+* Chaining scores are output in the form (Colour Bits, Score , X, X) where the colour bits encode haplotypes. For example:  [(32, 3727.0, 0), (16, 3759.0, 0), (8, 3724.0, 0), (4, 3758.0, 0), (2, 3949.0, 0), (1, 3821.0, 0)]
+indicates that the colour corrresponding to 2 has the highest score; this is expected since hg01243 corresponds to the second smallest bit. 
+* For the best haplotype (if there is more than one, we pick one at random) according to chaining, we align to the haplotype using [block-aligner](https://github.com/Daniel-Liu-c0deb0t/block-aligner) and output results in the bam file.
 
 ## Issues
 
 1. Aligning two big contigs (chromosomes) takes a long time right now; > 2000 seconds. This is caused by extremely repetitive kmers creating too many anchors. Will work on removing repetitive k-mers later on (i.e. masking repetitive kmers).
-2. **Make sure there are no stretches of N's in the reference file!**. These Ns will cause chaining to take a long time, because the Ns are converted to As in the code and repetitive k-mers cause the number of anchors to blow up. I just removed the Ns from the reference.
-3. If two contigs are dissimilar, the graph generation may be very poor. We find the best alignment and align no matter what; we don't check if the alignment is actually good or not. 
-4. Reverse complements don't work in any shape or form so be careful.
+2. If two contigs are dissimilar, the graph generation may be very poor. We find the best alignment and align no matter what; we don't check if the alignment is actually good or not. 
 
 ## Outputs from `generate`
 
@@ -71,7 +71,7 @@ Binary serializeation of the graph used in the `map` subcommand.
 
 ### read_anchor_hits.txt
 
-Gives the orders of the nodes corresponding to the best chain for each read. Again, note that half of the reads will have poor chains because reverse complements are not accounted for.
+Gives the ids of the nodes corresponding to the best chain for each read. 
 
 ### Visualization
 
