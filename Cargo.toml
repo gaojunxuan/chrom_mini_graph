@@ -18,6 +18,7 @@ serde = "*"
 serde_json = "1.0"
 clap = "*"
 bincode = "*"
+rust-htslib = "*"
 
 [profile.release]
 opt-level = 3
