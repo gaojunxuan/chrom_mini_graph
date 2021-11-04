@@ -259,6 +259,7 @@ pub fn get_coords(
 pub fn write_bam_header(
     chroms: &Vec<(DnaString, bool)>,
     ref_names: &Vec<String>,
+    bam_name: String
 ) -> (HeaderView, Writer) {
     let mut header = Header::new();
     for (i, (reference, _strand)) in chroms.iter().enumerate() {
@@ -267,13 +268,14 @@ pub fn write_bam_header(
         new_rec.push_tag(b"LN", &reference.len());
         header.push_record(&new_rec);
     }
-    let writer = Writer::from_path("./test.bam", &header, Format::Bam).unwrap();
+    let writer = Writer::from_path(bam_name, &header, Format::Bam).unwrap();
     return (HeaderView::from_header(&header), writer);
 }
 
 pub fn get_bam_record(
     cigar: Cigar,
     sequence: &String,
+    quals: &[u8],
     qname: &String,
     strand: bool,
     ref_name: &String,
@@ -300,10 +302,13 @@ pub fn get_bam_record(
 
         hts_cigar_vec.push(hts_op);
     }
+    let mut scaled_quals = vec![0;quals.len()];
+    for (i,val) in quals.iter().enumerate(){
+        scaled_quals[i] = val-33;
+    }
     let hts_cigar_view = CigarString(hts_cigar_vec);
     let hts_cigar = Some(hts_cigar_view);
-    let quals = vec![255 as u8; sequence.len()];
-    rec.set(qname.as_bytes(), hts_cigar.as_ref(), &sequence.as_bytes(), &quals);
+    rec.set(qname.as_bytes(), hts_cigar.as_ref(), &sequence.as_bytes(), &scaled_quals);
 
     if strand == false {
         rec.set_reverse();

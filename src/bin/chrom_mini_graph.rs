@@ -38,7 +38,7 @@ fn main() {
                 arg(
                     Arg::with_name("output")
                         .short("o")
-                        .help("Name of output chromatic reference graph. (Default: serialized_mini_graph)")
+                        .help("Name of output chromatic reference graph. Produces a .json and .bin file. (Default: serialized_mini_graph)")
                         .takes_value(true),
                 ).
                 arg(
@@ -60,13 +60,13 @@ fn main() {
                     Arg::with_name("reference_graph")
                         .required(true)
                         .index(1)
-                        .help("Reference graph output from the generate subcommand."),
+                        .help("Reference graph (.bin) output from the generate subcommand. E.g. serialized_mini_graph.bin"),
                 ).
                 arg(
                     Arg::with_name("reads")
                         .required(true)
                         .index(2)
-                        .help("Reads to map to graph"),
+                        .help("Reads to map to graph. Only support fastq right now."),
                 ).
                 arg(
                     Arg::with_name("syncmer")
@@ -77,6 +77,12 @@ fn main() {
                     Arg::with_name("dont_output_stuff")
                         .short("u")
                         .help("Output auxillary info (Default: on) ")
+                ).
+                arg(
+                    Arg::with_name("bam_name")
+                        .short("b")
+                        .help("Name of output bam file. (Default: output.bam) ")
+                        .takes_value(true),
                 )
         )
         .get_matches();
@@ -328,6 +334,8 @@ fn main() {
     } else {
         let dont_output_stuff = matches_subc.is_present("dont_output_stuff");
         let ref_graph_file = matches_subc.value_of("reference_graph").unwrap();
+        let bam_name = matches_subc.value_of("bam_name").unwrap_or("output.bam");
+
         let ref_graph_f = File::open(ref_graph_file).unwrap();
         let ref_graph_reader = BufReader::new(ref_graph_f);
 
@@ -361,15 +369,17 @@ fn main() {
         for record in reader.unwrap().records() {
             let rec = record.unwrap();
             let read = DnaString::from_acgt_bytes(rec.seq());
+            let quals = rec.qual().to_vec();
             let id = rec.id().to_string();
-            reads.push((read, id));
+            reads.push((read, id, quals));
         }
 
         let ref_hash_map = chain::get_kmer_dict(&ref_graph);
         let mut anchor_file = BufWriter::new(File::create("read_anchor_hits.txt").unwrap());
-        let (headerview, mut writer) = align::write_bam_header(&chroms, &chrom_names);
+        let (headerview, mut writer) = align::write_bam_header(&chroms, &chrom_names, bam_name.to_string());
 
-        for (read, read_id) in reads {
+        for (read, read_id, quals) in reads {
+            println!("---------------Read: {}---------------", read_id);
             let mut read_seeds;
             //            let now = Instant::now();
             let s2;
@@ -407,7 +417,6 @@ fn main() {
                 }
                 write!(&mut anchor_file, "\n").unwrap();
             }
-            println!("Read: {}", read_id);
             println!("Chaining time: {}", now.elapsed().as_secs_f32());
             let now = Instant::now();
             let (best_color, best_anchors) = chain::get_best_path_from_chain2(
@@ -471,7 +480,7 @@ fn main() {
             }
 
             //GET THE REFERENCE STRING
-            let test1;
+            let ref_map_string;
             let a;
             let b;
             if *strand_chrom {
@@ -482,7 +491,7 @@ fn main() {
                 } else {
                     b = kmer_hit_coords.last().unwrap().0 + 16;
                 }
-                test1 = ref_chrom
+                ref_map_string = ref_chrom
                     .slice(a as usize, b as usize)
                     .to_string();
             } else {
@@ -493,7 +502,7 @@ fn main() {
                 } else {
                     a = kmer_hit_coords.last().unwrap().0;
                 }
-                test1 = ref_chrom
+                ref_map_string = ref_chrom
                     .slice(a as usize, b as usize)
                     .rc()
                     .to_string();
@@ -504,23 +513,27 @@ fn main() {
             } else {
                 start_pos_chrom = a;
             }
-            let test2;
+            let read_map_string;
+            let qual_map_string;
             if read_strand {
-                test2 = read
+                read_map_string= read
                     .slice(kmer_hit_coords[0].1, kmer_hit_coords.last().unwrap().1 + 16)
                     .to_string();
+                qual_map_string = &quals[kmer_hit_coords[0].1.. kmer_hit_coords.last().unwrap().1 + 16];
+
             } else {
-                test2 = read
+                read_map_string= read
                     .slice(kmer_hit_coords.last().unwrap().1, kmer_hit_coords[0].1 + 16)
                     .rc()
                     .to_string();
+                qual_map_string = &quals[kmer_hit_coords.last().unwrap().1.. kmer_hit_coords[0].1 + 16];
             }
 
             //ALIGNMENT
             let now = Instant::now();
             let block_size = 16;
-            let r = PaddedBytes::from_string::<NucMatrix>(test1, block_size);
-            let q = PaddedBytes::from_string::<NucMatrix>(test2.clone(), block_size);
+            let r = PaddedBytes::from_string::<NucMatrix>(ref_map_string, block_size);
+            let q = PaddedBytes::from_string::<NucMatrix>(read_map_string.clone(), block_size);
             let gaps = Gaps {
                 open: -2,
                 extend: -1,
@@ -530,14 +543,14 @@ fn main() {
 
             let res = a.res();
             let cigar = a.trace().cigar(res.query_idx, res.reference_idx);
-            println!("{}", cigar.to_string());
             println!("Aligning time: {}", now.elapsed().as_secs_f32());
             println!("Alignment score: {}", res.score);
             let ref_chrom_name =
                 &chrom_names[chroms.len() - align::get_first_nonzero_bit(best_color as usize) - 1];
             let bam_rec = align::get_bam_record(
                 cigar,
-                &test2,
+                &read_map_string,
+                qual_map_string,
                 &read_id,
                 read_strand,
                 ref_chrom_name,
