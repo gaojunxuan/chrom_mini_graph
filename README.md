@@ -1,6 +1,6 @@
 # chrom_mini_graph 
 
-chrom_mini_graph creates a chromatic (coloured) minimizer pangenome graph. 
+chrom_mini_graph is a tool for generating and mapping reads onto a chromatic (coloured) minimizer pangenome graph. 
 
 ### Requirements 
 
