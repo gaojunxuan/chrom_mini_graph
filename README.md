@@ -49,6 +49,7 @@ indicates that the colour corrresponding to 2 has the highest score; this is exp
 1. Aligning two big contigs (chromosomes) takes a long time right now; > 2000 seconds. This is caused by extremely repetitive kmers creating too many anchors. Will work on removing repetitive k-mers later on (i.e. masking repetitive kmers).
 2. If two contigs are dissimilar, the graph generation may be very poor. We find the best alignment and align no matter what; we don't check if the alignment is actually good or not. 
 3. I have not optimized the alignment. It seems like it is more likely to fail in noisy regions than minimap2 alignment. 
+4. Only one alignment is output per read. No supplementary/secondary alignments are output.
 
 ## Outputs from `generate`
 
