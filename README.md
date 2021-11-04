@@ -50,6 +50,7 @@ indicates that the colour corrresponding to 2 has the highest score; this is exp
 2. If two contigs are dissimilar, the graph generation may be very poor. We find the best alignment and align no matter what; we don't check if the alignment is actually good or not. 
 3. I have not optimized the alignment. It seems like it is more likely to fail in noisy regions than minimap2 alignment. 
 4. Only one alignment is output per read. No supplementary/secondary alignments are output.
+5. Mapping near the start and ends of chromosomes may be wonky. 
 
 ## Outputs from `generate`
 
