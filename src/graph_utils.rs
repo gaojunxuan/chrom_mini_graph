@@ -311,16 +311,16 @@ pub fn add_align_to_graph(
 
             if !contains_dist {
                 num_contains_dist_not += 1;
-                println!(
-                    "Unequal distance between adj minimizers: {:?}, {:?}, {}, {}, {}, {}, {}",
-                    genome_dist_query_adj,
-                    kmer1r.child_edge_distance,
-                    kmer1r.kmer.rc().to_string(),
-                    kmer2r.kmer.to_string(),
-                    kmer1q.kmer.to_string(),
-                    kmer2q.kmer.rc().to_string(),
-                    num_contains_dist_not
-                );
+//                println!(
+//                    "Unequal distance between adj minimizers: {:?}, {:?}, {}, {}, {}, {}, {}",
+//                    genome_dist_query_adj,
+//                    kmer1r.child_edge_distance,
+//                    kmer1r.kmer.rc().to_string(),
+//                    kmer2r.kmer.to_string(),
+//                    kmer1q.kmer.to_string(),
+//                    kmer2q.kmer.rc().to_string(),
+//                    num_contains_dist_not
+//                );
                 if edge_id == u8::MAX {}
                 kmer1r
                     .child_edge_distance

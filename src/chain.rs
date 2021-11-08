@@ -125,7 +125,9 @@ pub fn chain_seeds<'a>(
     let now = Instant::now();
 
     let mut forward_anchors = vec![];
+    let mut forward_hits_set = FxHashSet::default();
     let mut backward_anchors = vec![];
+    let mut backward_hits_set = FxHashSet::default();
 
     let mut most_repet_kmer = -1;
     for kmer in q_hash_map.keys() {
@@ -143,9 +145,11 @@ pub fn chain_seeds<'a>(
                     if node_r.canonical == node_q.canonical {
                         //                        forward_anchors.push((node_r,node_q));
                         forward_anchors.push((node_r.id, node_q.id));
+                        forward_hits_set.insert(&node_r.kmer);
                     } else {
                         //                        backward_anchors.push((node_r,node_q));
                         backward_anchors.push((node_r.id, node_q.id));
+                        backward_hits_set.insert(&node_r.kmer);
                     }
                     count += 1
                 }
@@ -160,8 +164,10 @@ pub fn chain_seeds<'a>(
         }
     }
 
-    let num_forward_anchors = forward_anchors.len();
-    let num_backward_anchors = backward_anchors.len();
+//    let num_forward_anchors = forward_anchors.len();
+//    let num_backward_anchors = backward_anchors.len();
+    let num_forward_anchors = forward_hits_set.len();
+    let num_backward_anchors = backward_hits_set.len();
 
     let forward_strand;
     let mut anchors;

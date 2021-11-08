@@ -235,7 +235,7 @@ fn main() {
             );
 
             println!("Aln score, mean score {},{}", aln_score, mean_score);
-            if aln_score < 0.75 * mean_score {
+            if aln_score < 0.75 * mean_score && circular {
                 println!("Bad alignment. Continuing");
                 continue;
             }

@@ -1,5 +1,6 @@
 use crate::data_structs::KmerNode;
 use debruijn::dna_string::*;
+use std::hash::{Hash as _Hash ,Hasher as _Hasher};
 use debruijn::kmer::Kmer10;
 use debruijn::kmer::Kmer12;
 use debruijn::kmer::Kmer16;
@@ -7,6 +8,7 @@ use debruijn::kmer::Kmer8;
 use debruijn::Mer;
 use debruijn::Vmer;
 use fxhash::hash;
+use fnv::FnvHasher;
 use smallvec::SmallVec;
 
 fn position_min<T: Ord>(slice: &[T]) -> Option<usize> {
@@ -23,6 +25,7 @@ pub fn minimizer_seeds(
     k: usize,
     samp_freq: usize,
 ) -> (Vec<KmerNode>, Vec<u32>) {
+    let use_fnv = true;
     let mut minimizer_seeds: Vec<KmerNode> = vec![];
     let mut positions_selected: Vec<u32> = Vec::new();
 
@@ -42,7 +45,14 @@ pub fn minimizer_seeds(
         } else {
             hash_kmer = rc_kmer;
         }
-        window_hashes[running_pos] = hash(&hash_kmer);
+        if use_fnv{
+            let mut state = FnvHasher::default();
+            hash_kmer.hash(&mut state);
+            window_hashes[running_pos] = state.finish() as usize;
+        }
+        else{
+            window_hashes[running_pos] = hash(&hash_kmer);
+        }
         if i < w - 1 {
             continue;
         }
