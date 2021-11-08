@@ -1,6 +1,6 @@
 # chrom_mini_graph 
 
-chrom_mini_graph creates a chromatic (coloured) minimizer pangenome graph. 
+chrom_mini_graph is a tool for generating and mapping reads onto a chromatic (coloured) minimizer pangenome graph. 
 
 ### Requirements 
 
@@ -18,7 +18,7 @@ cargo build --release
 
 1. `cargo build --release` first builds the **chrom_mini_graph** binary, which is found in the ./target/release/ directory.
 2. The `chrom_mini_graph generate` command generates a coloured minimizer pangenome graph. 
-3. The `chrom_mini_graph map` command chains onto the graph which is called `serialized_mini_graph.bin`.
+3. The `chrom_mini_graph map` command chains onto the output graph and produces an alignment.
 4. The resulting chain is used for alignment and is output to `hg-01243-reads.bam`. 
 
 * 6 reference 1M bp segments of chromosome 20 are provided in the test_ref folder. 
@@ -48,6 +48,9 @@ indicates that the colour corrresponding to 2 has the highest score; this is exp
 
 1. Aligning two big contigs (chromosomes) takes a long time right now; > 2000 seconds. This is caused by extremely repetitive kmers creating too many anchors. Will work on removing repetitive k-mers later on (i.e. masking repetitive kmers).
 2. If two contigs are dissimilar, the graph generation may be very poor. We find the best alignment and align no matter what; we don't check if the alignment is actually good or not. 
+3. I have not optimized the alignment. It seems like it is more likely to fail in noisy regions than minimap2 alignment. 
+4. Only one alignment is output per read. No supplementary/secondary alignments are output.
+5. Mapping near the start and ends of chromosomes may be wonky. 
 
 ## Outputs from `generate`
 
