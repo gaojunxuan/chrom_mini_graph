@@ -5,6 +5,7 @@ chrom_mini_graph is a tool for generating and mapping reads onto a chromatic (co
 ### Requirements 
 
 1. [rust](https://www.rust-lang.org/tools/install) and associated tools such as cargo are required and assumed to be in PATH.
+2. cmake version >= 3.12 has to be in path due to dependency on --parallel command (see [here](https://githubmemory.com/repo/alexcrichton/cmake-rs/issues/131?page=1)).
 
 ### Install
 
