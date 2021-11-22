@@ -1,16 +1,35 @@
 use crate::data_structs::KmerNode;
 use debruijn::dna_string::*;
-use std::hash::{Hash as _Hash ,Hasher as _Hasher};
 use debruijn::kmer::Kmer10;
 use debruijn::kmer::Kmer12;
 use debruijn::kmer::Kmer16;
 use debruijn::kmer::Kmer8;
 use debruijn::Mer;
 use debruijn::Vmer;
-use fxhash::hash;
 use fnv::FnvHasher;
+use fxhash::hash;
+use fxhash::{FxHashSet, FxHashMap};
 use smallvec::SmallVec;
+use std::hash::{Hash as _Hash, Hasher as _Hasher};
 
+pub fn get_masked_kmers(s: &DnaString, w: usize, k: usize, fraction_mask_f64 : f64) -> FxHashSet<Kmer16>{
+    //Get the discarded k-mers here and don't use these k-mers when seeding
+    let (seeds1,_p1) = minimizer_seeds(s, w, k, 100, &FxHashSet::default());
+    let mut kmer_count_dict = FxHashMap::default();
+    for node in seeds1.into_iter() {
+        let count_num = kmer_count_dict.entry(node.kmer).or_insert(0);
+        *count_num += 1;
+    }
+
+    let mut hash_vec: Vec<(Kmer16, usize)> = kmer_count_dict.into_iter().collect();
+    hash_vec.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut dont_use_kmers = FxHashSet::default();
+
+    for i in 0..(hash_vec.len() as f64 * fraction_mask_f64) as usize {
+        dont_use_kmers.insert(hash_vec[i].0);
+    }
+    return dont_use_kmers;
+}
 fn position_min<T: Ord>(slice: &[T]) -> Option<usize> {
     slice
         .iter()
@@ -24,6 +43,7 @@ pub fn minimizer_seeds(
     w: usize,
     k: usize,
     samp_freq: usize,
+    dont_use_kmers: &FxHashSet<Kmer16>,
 ) -> (Vec<KmerNode>, Vec<u32>) {
     let use_fnv = true;
     let mut minimizer_seeds: Vec<KmerNode> = vec![];
@@ -33,7 +53,7 @@ pub fn minimizer_seeds(
     let mut running_pos = 0;
     let mut min_running_pos = usize::MAX;
     let mut window_hashes = vec![0; w];
-    if s.len() < k + 1{
+    if s.len() < k + 1 {
         return (vec![], vec![]);
     }
     for i in 0..s.len() - k + 1 {
@@ -45,12 +65,11 @@ pub fn minimizer_seeds(
         } else {
             hash_kmer = rc_kmer;
         }
-        if use_fnv{
+        if use_fnv {
             let mut state = FnvHasher::default();
             hash_kmer.hash(&mut state);
             window_hashes[running_pos] = state.finish() as usize;
-        }
-        else{
+        } else {
             window_hashes[running_pos] = hash(&hash_kmer);
         }
         if i < w - 1 {
@@ -92,25 +111,28 @@ pub fn minimizer_seeds(
             canonical = true;
             node_kmer = kmer;
         }
-        positions_selected.push((i - offset) as u32);
-        let mut kmer_node = KmerNode {
-            kmer: node_kmer,
-            id: positions_selected.len() as u32 - 1,
-            order: positions_selected.len() as u32 - 1,
-            color: 1,
-            child_nodes: SmallVec::<[u32; 1]>::new(),
-            child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
-            //            child_nodes: vec![],
-            canonical: canonical,
-            actual_ref_positions: SmallVec::<[usize; 0]>::new(),
-        };
-        if positions_selected.len() % samp_freq == 0 {
-            kmer_node
-                .actual_ref_positions
-                .push(*positions_selected.last().unwrap() as usize);
-        }
 
-        minimizer_seeds.push(kmer_node);
+        if !dont_use_kmers.contains(&node_kmer) {
+            positions_selected.push((i - offset) as u32);
+            let mut kmer_node = KmerNode {
+                kmer: node_kmer,
+                id: positions_selected.len() as u32 - 1,
+                order: positions_selected.len() as u32 - 1,
+                color: 1,
+                child_nodes: SmallVec::<[u32; 1]>::new(),
+                child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
+                //            child_nodes: vec![],
+                canonical: canonical,
+                actual_ref_positions: SmallVec::<[usize; 0]>::new(),
+            };
+            if positions_selected.len() % samp_freq == 0 {
+                kmer_node
+                    .actual_ref_positions
+                    .push(*positions_selected.last().unwrap() as usize);
+            }
+
+            minimizer_seeds.push(kmer_node);
+        }
         //        let pos_vec = minimizer_seeds
         //            .entry(kmer)
         //            .or_insert(FxHashSet::default());
@@ -145,6 +167,7 @@ pub fn open_sync_seeds(
     k: usize,
     t: usize,
     samp_freq: usize,
+    dont_use_kmers: &FxHashSet<Kmer16>,
 ) -> (Vec<KmerNode>, Vec<u32>) {
     let s = 10;
     let mut syncmer_seeds = vec![];
@@ -193,25 +216,28 @@ pub fn open_sync_seeds(
                     canonical = true;
                     node_kmer = kmer;
                 }
-                positions_selected.push((i + 1 - w) as u32);
-                let mut kmer_node = KmerNode {
-                    kmer: node_kmer,
-                    id: positions_selected.len() as u32 - 1,
-                    order: positions_selected.len() as u32 - 1,
-                    color: 1,
-                    child_nodes: SmallVec::<[u32; 1]>::new(),
-                    child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
-                    canonical: canonical, //                    child_nodes: vec![],
-                    actual_ref_positions: SmallVec::<[usize; 0]>::new(),
-                };
 
-                if positions_selected.len() % samp_freq == 0 {
-                    kmer_node
-                        .actual_ref_positions
-                        .push(*positions_selected.last().unwrap() as usize);
+                if !dont_use_kmers.contains(&node_kmer) {
+                    positions_selected.push((i + 1 - w) as u32);
+                    let mut kmer_node = KmerNode {
+                        kmer: node_kmer,
+                        id: positions_selected.len() as u32 - 1,
+                        order: positions_selected.len() as u32 - 1,
+                        color: 1,
+                        child_nodes: SmallVec::<[u32; 1]>::new(),
+                        child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
+                        canonical: canonical, //                    child_nodes: vec![],
+                        actual_ref_positions: SmallVec::<[usize; 0]>::new(),
+                    };
+
+                    if positions_selected.len() % samp_freq == 0 {
+                        kmer_node
+                            .actual_ref_positions
+                            .push(*positions_selected.last().unwrap() as usize);
+                    }
+
+                    syncmer_seeds.push(kmer_node);
                 }
-
-                syncmer_seeds.push(kmer_node);
             }
         } else {
             if w - (min_running_pos - running_pos) == t - 1 {
@@ -224,24 +250,27 @@ pub fn open_sync_seeds(
                     canonical = true;
                     node_kmer = kmer;
                 }
-                positions_selected.push((i + 1 - w) as u32);
-                let mut kmer_node = KmerNode {
-                    kmer: node_kmer,
-                    id: positions_selected.len() as u32 - 1,
-                    order: positions_selected.len() as u32 - 1,
-                    color: 1,
-                    child_nodes: SmallVec::<[u32; 1]>::new(),
-                    child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
-                    canonical: canonical, //                    child_nodes: vec![],
-                    actual_ref_positions: SmallVec::<[usize; 0]>::new(),
-                };
-                if positions_selected.len() % samp_freq == 0 {
-                    kmer_node
-                        .actual_ref_positions
-                        .push(*positions_selected.last().unwrap() as usize);
-                }
 
-                syncmer_seeds.push(kmer_node);
+                if !dont_use_kmers.contains(&node_kmer) {
+                    positions_selected.push((i + 1 - w) as u32);
+                    let mut kmer_node = KmerNode {
+                        kmer: node_kmer,
+                        id: positions_selected.len() as u32 - 1,
+                        order: positions_selected.len() as u32 - 1,
+                        color: 1,
+                        child_nodes: SmallVec::<[u32; 1]>::new(),
+                        child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
+                        canonical: canonical, //                    child_nodes: vec![],
+                        actual_ref_positions: SmallVec::<[usize; 0]>::new(),
+                    };
+                    if positions_selected.len() % samp_freq == 0 {
+                        kmer_node
+                            .actual_ref_positions
+                            .push(*positions_selected.last().unwrap() as usize);
+                    }
+
+                    syncmer_seeds.push(kmer_node);
+                }
             }
         }
 

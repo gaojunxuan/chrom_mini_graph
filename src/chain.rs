@@ -118,7 +118,7 @@ pub fn chain_seeds<'a>(
     h: usize,
     chain_heuristic: bool,
     chain_reads: bool,
-    not_used_kmers: &FxHashSet<&Kmer16>,
+    not_used_kmers: &FxHashSet<Kmer16>,
     circular: bool
 ) -> (Vec<(u32, u32)>, f64, bool) {
     let q_len = seeds_q.len();
@@ -158,7 +158,7 @@ pub fn chain_seeds<'a>(
             if count > most_repet_kmer {
                 most_repet_kmer = count.clone();
                 if !chain_reads {
-                    dbg!(&kmer);
+//                    dbg!(&kmer);
                 }
             }
         }
@@ -194,7 +194,7 @@ pub fn chain_seeds<'a>(
     );
 
     if !chain_reads {
-        dbg!(most_repet_kmer);
+        println!("Most repetitive k-mer gives {} anchors", most_repet_kmer);
     }
     if !chain_reads {
         println!(

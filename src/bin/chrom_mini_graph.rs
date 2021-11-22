@@ -50,6 +50,12 @@ fn main() {
                     Arg::with_name("circular")
                         .short("c")
                         .help("Assume that the genomes are circular. (Default: not circular)")
+                ).
+                arg(
+                    Arg::with_name("mask")
+                        .short("m")
+                        .help("Mask fraction of k-mers (Default: top 0.05% of repetitive k-mers)")
+                        .takes_value(true)
                 )
         )
         .subcommand(
@@ -111,7 +117,7 @@ fn main() {
 
     let w = 16;
     let k = 16;
-    let mask_repet_on_generate = false;
+    let mask_repet_on_generate = true;
     let s = 10;
     let t = (k - s + 2) / 2 as usize;
     let h = 30;
@@ -126,6 +132,11 @@ fn main() {
     }
 
     if generate {
+        let fraction_mask = matches_subc
+            .value_of("mask")
+            .unwrap_or("0.0005");
+        let fraction_mask_f64 : f64= fraction_mask.parse().unwrap();
+
         let ref_genomes: Vec<&str> = matches_subc.values_of("references").unwrap().collect();
         let mut chroms = vec![];
         let mut good_chroms = vec![];
@@ -135,18 +146,17 @@ fn main() {
         for i in 0..ref_genomes.len() {
             let reader = fasta::Reader::from_file(&ref_genomes[i]);
             for record in reader.unwrap().records() {
-                dbg!(i);
                 let rec = record.unwrap();
-                let rec_id = rec.desc();
-                if let Some(rec_id_str) = rec_id {
-                    if rec_id_str.contains("plasmid") {
+                let rec_desc = rec.desc();
+                if let Some(rec_desc_str) = rec_desc {
+                    if rec_desc_str.contains("plasmid") {
                         continue;
                     }
                 }
+                println!("Iteration: {}, Contig: {}, Reference: {}.", chroms.len(), rec.id(), ref_genomes[i]);
                 chrom_names.push(rec.id().to_string());
                 let chrom = DnaString::from_acgt_bytes(rec.seq());
                 chroms.push((chrom, true));
-                println!("{}-th reference is {}.", i, ref_genomes[i]);
             }
         }
 
@@ -155,10 +165,11 @@ fn main() {
 
         let mut seeds1;
         let seed_p1;
+        let dont_use_kmers = seeding_methods_bit::get_masked_kmers(&chroms[0].0, w, k, fraction_mask_f64);
         if use_minimizers {
-            seed_p1 = seeding_methods_bit::minimizer_seeds(&chroms[0].0, w, k, samp_freq);
+            seed_p1 = seeding_methods_bit::minimizer_seeds(&chroms[0].0, w, k, samp_freq, &dont_use_kmers);
         } else {
-            seed_p1 = seeding_methods_bit::open_sync_seeds(&chroms[0].0, k, t, samp_freq);
+            seed_p1 = seeding_methods_bit::open_sync_seeds(&chroms[0].0, k, t, samp_freq, &dont_use_kmers);
         }
         seeds1 = seed_p1.0;
         let p1 = seed_p1.1;
@@ -181,9 +192,9 @@ fn main() {
             let now = Instant::now();
             let s2;
             if use_minimizers {
-                s2 = seeding_methods_bit::minimizer_seeds(genome_string, w, k, 1);
+                s2 = seeding_methods_bit::minimizer_seeds(genome_string, w, k, 1, &dont_use_kmers);
             } else {
-                s2 = seeding_methods_bit::open_sync_seeds(genome_string, k, t, 1);
+                s2 = seeding_methods_bit::open_sync_seeds(genome_string, k, t, 1, &dont_use_kmers);
             }
             seeds2 = s2.0;
             println!(
@@ -202,14 +213,6 @@ fn main() {
 
             let mut hash_vec: Vec<(&Kmer16, &usize)> = kmer_count_dict.iter().collect();
             hash_vec.sort_by(|a, b| b.1.cmp(a.1));
-            let mut dont_use_kmers = FxHashSet::default();
-
-            for i in 0..hash_vec.len() / 1000 as usize {
-                dont_use_kmers.insert(hash_vec[i].0);
-            }
-            if !mask_repet_on_generate {
-                dont_use_kmers = FxHashSet::default();
-            }
 
             let (best_anchors, aln_score, forward_strand) = chain::chain_seeds(
                 &mut seeds1,
@@ -323,6 +326,7 @@ fn main() {
 
         let mut file = File::create("full_mini_graph.csv").unwrap();
         for node in seeds1.iter() {
+//            println!("{:?},{}", node.kmer, node.kmer.to_string());
             for child in node.child_nodes.iter() {
                 let towrite = format!(
                     "{}-{},{}-{}\n",
@@ -357,7 +361,7 @@ fn main() {
         hash_vec.sort_by(|a, b| b.1.cmp(a.1));
         let mut dont_use_kmers = FxHashSet::default();
 
-        for i in 0..hash_vec.len() / 10000 as usize {
+        for i in 0..hash_vec.len() / 1000 as usize {
             dont_use_kmers.insert(hash_vec[i].0);
         }
         //        dont_use_kmers.insert(hash_vec[0].0);
@@ -384,9 +388,9 @@ fn main() {
             //            let now = Instant::now();
             let s2;
             if use_minimizers {
-                s2 = seeding_methods_bit::minimizer_seeds(&read, w, k, 1);
+                s2 = seeding_methods_bit::minimizer_seeds(&read, w, k, 1, &FxHashSet::default());
             } else {
-                s2 = seeding_methods_bit::open_sync_seeds(&read, k, t, 1);
+                s2 = seeding_methods_bit::open_sync_seeds(&read, k, t, 1, &FxHashSet::default());
             }
 
             //            println!(
