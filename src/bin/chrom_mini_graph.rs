@@ -456,6 +456,8 @@ fn main() {
             for (i, (c1, c2)) in kmer_hit_coords.iter().enumerate() {
                 let adj_c1;
                 if *c1 >= ref_chrom.len() as i64 {
+                    //We don't want to do this right now because I believe minimizer distance
+                    //across the ends of a reference genome isn't done properly...
                     adj_c1 = c1 - ref_chrom.len() as i64;
                 } else if *c1 < 0 {
                     adj_c1 = ref_chrom.len() as i64 + *c1;
@@ -476,6 +478,7 @@ fn main() {
                     .to_string();
                 let d6 = read.slice(*c2, *c2 + 16).rc().to_string();
                 if d1 != d4 && d1 != d5 {
+                    dbg!(ref_chrom.len(), c1, c2);
                     println!("NOT FOUND {} ! read and ref {} {} {} {}", i, d1, d6, d4, d5);
                 }
                 if d1 != d2 && d1 != d3 {
@@ -491,9 +494,13 @@ fn main() {
                 a = kmer_hit_coords[0].0;
                 if kmer_hit_coords.last().unwrap().0 < a {
                     b = ref_chrom.len() as i64;
-                    println!("Circular mapping b. Cut off TODO");
+                    println!("Circular mapping b. Cut off TODO. Not implemented yet?");
                 } else {
                     b = kmer_hit_coords.last().unwrap().0 + 16;
+                }
+                if b as usize > ref_chrom.len(){
+                    println!("End of chromosome mapping issue. Continue");
+                    continue;
                 }
                 ref_map_string = ref_chrom
                     .slice(a as usize, b as usize)
@@ -502,9 +509,13 @@ fn main() {
                 b = kmer_hit_coords[0].0 + 16;
                 if kmer_hit_coords.last().unwrap().0 < 0 {
                     a = 0;
-                    println!("Circular mapping a. Cut off TODO");
+                    println!("Circular mapping a. Cut off TODO. Not implemented yet?");
                 } else {
                     a = kmer_hit_coords.last().unwrap().0;
+                }
+                if b as usize > ref_chrom.len(){
+                    println!("End of chromosome mapping issue. Continue");
+                    continue;
                 }
                 ref_map_string = ref_chrom
                     .slice(a as usize, b as usize)

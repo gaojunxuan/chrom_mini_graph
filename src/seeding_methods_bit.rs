@@ -145,7 +145,7 @@ pub fn minimizer_seeds(
     for i in 0..minimizer_seeds.len() {
         if i == minimizer_seeds.len() - 1 {
             minimizer_seeds[i].child_nodes.push(0 as u32);
-            //TODO this is incorrect
+            //TODO this is incorrect -- why isthis incorrect??
             let dist_on_genome = positions_selected[0] + s.len() as u32 - positions_selected[i];
             minimizer_seeds[i]
                 .child_edge_distance

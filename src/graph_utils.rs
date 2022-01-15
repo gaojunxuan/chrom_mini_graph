@@ -136,6 +136,7 @@ pub fn top_sort(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
         visited.insert(node);
         let mut no_further = true;
         for child_id in ref_nodes[node as usize].child_nodes.iter() {
+            //Circular cutoff
             if ref_nodes[(*child_id) as usize].order < ref_nodes[node as usize].order {
                 continue;
             }

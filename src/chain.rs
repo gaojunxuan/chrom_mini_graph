@@ -110,6 +110,124 @@ fn beta(ref_order_dist: f64, query_order_dist: f64) -> f64 {
     }
 }
 
+fn get_chain<'a>(
+    seeds_ref: &'a mut Vec<KmerNode>,
+    seeds_q: &'a mut Vec<KmerNode>,
+    h: usize,
+    chain_heuristic: bool,
+    chain_reads: bool,
+    circular: bool,
+    forward_strand: bool,
+    anchors: &mut Vec<(u32,u32)>
+) ->(Vec<(u32, u32)>, f64){
+
+    let q_len = seeds_q.len();
+    if forward_strand == false {
+        for node in seeds_q.iter_mut() {
+            node.order = q_len as u32 - node.order - 1;
+            //            for child_id in node.child_nodes.iter_mut(){
+            //                *child_id = q_len as u32 - *child_id - 1;
+            //            }
+        }
+    }
+
+    
+    if anchors.len() == 0 {
+        return (vec![], 0.0);
+    }
+
+    //dbg!(anchors[1],anchors[2],anchors[3]);
+    //dbg!(alpha(1,2,&anchors,k),alpha(2,3,&anchors,k));
+    //dbg!(beta(1,2,&anchors,k,g),beta(2,3,&anchors,k,g));
+    //chaining
+
+    let mut f = vec![0.0 as f64];
+    let mut pointer_array = vec![];
+    for i in 0..anchors.len() {
+        pointer_array.push(i);
+    }
+
+    anchors.sort_by(|a, b| {
+        seeds_ref[a.0 as usize]
+            .order
+            .cmp(&seeds_ref[b.0 as usize].order)
+    });
+
+    get_chain_from_anchors(
+        &mut f,
+        &mut pointer_array,
+        anchors,
+        chain_heuristic,
+        chain_reads,
+        h,
+        &seeds_ref,
+        &seeds_q,
+        (0, 0),
+    );
+    let mut aln_score = 0.0;
+    aln_score += f[position_max_f64(&f).unwrap()];
+
+    let (mut best_seq_anchors_1, range_ref, range_query) =
+        get_best_chain(f, pointer_array, &anchors, &seeds_ref, &seeds_q);
+
+    let mut second_round_anchors = vec![];
+    for anchor in anchors {
+        if seeds_ref[anchor.0 as usize].order < range_ref.0
+            || seeds_ref[anchor.0 as usize].order > range_ref.1
+        {
+            if seeds_q[anchor.1 as usize].order < range_query.0
+                || seeds_q[anchor.1 as usize].order > range_query.1
+            {
+                second_round_anchors.push(*anchor);
+            }
+        }
+    }
+
+    let mut f = vec![0.0 as f64];
+    let mut pointer_array = vec![];
+    for i in 0..second_round_anchors.len() {
+        pointer_array.push(i);
+    }
+
+    if second_round_anchors.len() == 0 || chain_reads || !circular {
+        return (best_seq_anchors_1, aln_score);
+    }
+
+    get_chain_from_anchors(
+        &mut f,
+        &mut pointer_array,
+        &mut second_round_anchors,
+        chain_heuristic,
+        chain_reads,
+        h,
+        &seeds_ref,
+        &seeds_q,
+        (range_ref.1, range_query.1),
+    );
+
+    aln_score += f[position_max_f64(&f).unwrap()];
+    let (mut best_seq_anchors_2, _range_ref, _range_query) = get_best_chain(
+        f,
+        pointer_array,
+        &second_round_anchors,
+        &seeds_ref,
+        &seeds_q,
+    );
+
+    best_seq_anchors_1.append(&mut best_seq_anchors_2);
+    //Reverse back because we may not want q reversed if the best alignment was actually forward.
+    if forward_strand == false {
+        for node in seeds_q.iter_mut() {
+            node.order = q_len as u32 - node.order - 1;
+            //            for child_id in node.child_nodes.iter_mut(){
+            //                *child_id = q_len as u32 - *child_id - 1;
+            //            }
+        }
+    }
+    //    best_seq_anchors_1.sort_by(|a, b| a.0.cmp(&b.0));
+    return (best_seq_anchors_1, aln_score);
+}
+
 pub fn chain_seeds<'a>(
     seeds_ref: &'a mut Vec<KmerNode>,
     seeds_q: &'a mut Vec<KmerNode>,
@@ -119,7 +237,7 @@ pub fn chain_seeds<'a>(
     chain_heuristic: bool,
     chain_reads: bool,
     not_used_kmers: &FxHashSet<Kmer16>,
-    circular: bool
+    circular: bool,
 ) -> (Vec<(u32, u32)>, f64, bool) {
     let q_len = seeds_q.len();
     let now = Instant::now();
@@ -158,34 +276,32 @@ pub fn chain_seeds<'a>(
             if count > most_repet_kmer {
                 most_repet_kmer = count.clone();
                 if !chain_reads {
-//                    dbg!(&kmer);
+                    //                    dbg!(&kmer);
                 }
             }
         }
     }
 
-//    let num_forward_anchors = forward_anchors.len();
-//    let num_backward_anchors = backward_anchors.len();
+    //    let num_forward_anchors = forward_anchors.len();
+    //    let num_backward_anchors = backward_anchors.len();
     let num_forward_anchors = forward_hits_set.len();
     let num_backward_anchors = backward_hits_set.len();
 
-    let forward_strand;
-    let mut anchors;
-    if num_forward_anchors > num_backward_anchors {
+    let mut forward_strand;
+    let ambig;
+    if num_forward_anchors > num_backward_anchors * 10 / 8 {
         forward_strand = true;
-        anchors = forward_anchors;
-    } else {
+        ambig = false;
+    } else if num_backward_anchors > num_forward_anchors * 10 / 8 {
         forward_strand = false;
-        anchors = backward_anchors;
+        ambig = false;
+    } else {
+        ambig = true;
+        forward_strand = true;
     }
 
-    if forward_strand == false {
-        for node in seeds_q.iter_mut() {
-            node.order = q_len as u32 - node.order - 1;
-//            for child_id in node.child_nodes.iter_mut(){
-//                *child_id = q_len as u32 - *child_id - 1;
-//            }
-        }
+    if !chain_reads {
+        println!("Most repetitive k-mer gives {} anchors", most_repet_kmer);
     }
 
     println!(
@@ -193,102 +309,38 @@ pub fn chain_seeds<'a>(
         num_forward_anchors, num_backward_anchors
     );
 
-    if !chain_reads {
-        println!("Most repetitive k-mer gives {} anchors", most_repet_kmer);
-    }
-    if !chain_reads {
-        println!(
-            "Got {} anchors in {}",
-            anchors.len(),
-            now.elapsed().as_secs_f32()
-        );
-    }
-
-    if anchors.len() == 0 {
-        return (vec![], 0.0, true);
-    }
-
-    //dbg!(anchors[1],anchors[2],anchors[3]);
-    //dbg!(alpha(1,2,&anchors,k),alpha(2,3,&anchors,k));
-    //dbg!(beta(1,2,&anchors,k,g),beta(2,3,&anchors,k,g));
-    //chaining
-
-    let mut f = vec![0.0 as f64];
-    let mut pointer_array = vec![];
-    for i in 0..anchors.len() {
-        pointer_array.push(i);
-    }
-
-    anchors.sort_by(|a, b| {
-        seeds_ref[a.0 as usize]
-            .order
-            .cmp(&seeds_ref[b.0 as usize].order)
-    });
-
-    get_chain_from_anchors(
-        &mut f,
-        &mut pointer_array,
-        &mut anchors,
-        chain_heuristic,
-        chain_reads,
-        h,
-        &seeds_ref,
-        &seeds_q,
-        (0, 0),
-    );
-    let mut aln_score = 0.0;
-    aln_score += f[position_max_f64(&f).unwrap()];
-
-    let (mut best_seq_anchors_1, range_ref, range_query) =
-        get_best_chain(f, pointer_array, &anchors, &seeds_ref, &seeds_q);
-
-    let mut second_round_anchors = vec![];
-    for anchor in anchors {
-        if seeds_ref[anchor.0 as usize].order < range_ref.0
-            || seeds_ref[anchor.0 as usize].order > range_ref.1
-        {
-            if seeds_q[anchor.1 as usize].order < range_query.0
-                || seeds_q[anchor.1 as usize].order > range_query.1
-            {
-                second_round_anchors.push(anchor);
-            }
+    if !ambig{
+        let mut anchors;
+        if forward_strand{
+            anchors = forward_anchors;
         }
+        else{
+            anchors = backward_anchors
+        }
+        let (best_seq_anchors,aln_score)= get_chain(seeds_ref, seeds_q, h, chain_heuristic, chain_reads, circular, forward_strand, &mut anchors);
+        return (best_seq_anchors,aln_score,forward_strand);
     }
+    else{
+        println!("Ambiguous strand");
+        forward_strand = true;
+        let (best_seq_anchors_forward,aln_score_forward)= get_chain(seeds_ref, seeds_q, h, chain_heuristic, chain_reads, circular, forward_strand, &mut forward_anchors);
+        forward_strand = false;
+        let (best_seq_anchors_backward,aln_score_backward)= get_chain(seeds_ref, seeds_q, h, chain_heuristic, chain_reads, circular, forward_strand, &mut backward_anchors);
+        println!("Forward chain score {}, backward chain score {}", aln_score_forward, aln_score_backward);
+        if aln_score_backward > aln_score_forward{
+            for node in seeds_q.iter_mut() {
+                node.order = q_len as u32 - node.order - 1;
+                //            for child_id in node.child_nodes.iter_mut(){
+                //                *child_id = q_len as u32 - *child_id - 1;
+                //            }
+            }
+            return (best_seq_anchors_backward, aln_score_backward, false);
+        }
+        else{
+            return (best_seq_anchors_forward, aln_score_forward, true);
+        }
 
-    let mut f = vec![0.0 as f64];
-    let mut pointer_array = vec![];
-    for i in 0..second_round_anchors.len() {
-        pointer_array.push(i);
     }
-
-    if second_round_anchors.len() == 0 || chain_reads || !circular{
-        return (best_seq_anchors_1, aln_score, forward_strand);
-    }
-
-    get_chain_from_anchors(
-        &mut f,
-        &mut pointer_array,
-        &mut second_round_anchors,
-        chain_heuristic,
-        chain_reads,
-        h,
-        &seeds_ref,
-        &seeds_q,
-        (range_ref.1, range_query.1),
-    );
-
-    aln_score += f[position_max_f64(&f).unwrap()];
-    let (mut best_seq_anchors_2, _range_ref, _range_query) = get_best_chain(
-        f,
-        pointer_array,
-        &second_round_anchors,
-        &seeds_ref,
-        &seeds_q,
-    );
-
-    best_seq_anchors_1.append(&mut best_seq_anchors_2);
-    //    best_seq_anchors_1.sort_by(|a, b| a.0.cmp(&b.0));
-    return (best_seq_anchors_1, aln_score, forward_strand);
 }
 
 //L ← Empty list that will contain the sorted nodes
@@ -345,7 +397,7 @@ pub fn get_best_path_from_chain2(
     anchors: Vec<(u32, u32)>,
     ref_nodes: &Vec<KmerNode>,
     order_to_id: &Vec<u32>,
-    qlen: u32
+    qlen: u32,
 ) -> (u64, Vec<(u32, u32)>) {
     let mut in_edges_dict: FxHashMap<u32, Vec<u32>> = FxHashMap::default();
     let mut best_paths: FxHashMap<u32, Vec<(u64, f64, usize, usize)>> = FxHashMap::default();
@@ -415,19 +467,15 @@ pub fn get_best_path_from_chain2(
 
         let mut all_colors = 0;
         for parent_id in parent_vec.iter() {
-            
-
             //Get the color of the edge from the parent to the current node
             let parent_node = &ref_nodes[*parent_id as usize];
             let mut edge_color = 0;
-            for edge in parent_node.child_edge_distance.iter(){
-                let ind = edge.1.1;
-                if parent_node.child_nodes[ind as usize] == intermediate_node.id{
-                    edge_color |= edge.1.0;
+            for edge in parent_node.child_edge_distance.iter() {
+                let ind = edge.1 .1;
+                if parent_node.child_nodes[ind as usize] == intermediate_node.id {
+                    edge_color |= edge.1 .0;
                 }
             }
-
-            
 
             let parent_paths = best_paths.get(parent_id).unwrap();
             for parent_path in parent_paths {
@@ -450,15 +498,19 @@ pub fn get_best_path_from_chain2(
                             - anchors[current_anchor_id - 1].1 as i64;
                         //                        }
                         let ref_dist = parent_path.2 + 1;
-                        let gap_cost =  ((query_dist as i64).abs() - ref_dist as i64).abs().pow(2)/2 + (query_dist as i64 + ref_dist as i64)/3;
+                        let gap_cost = ((query_dist as i64).abs() - ref_dist as i64).abs().pow(2)
+                            / 2
+                            + (query_dist as i64 + ref_dist as i64) / 3;
 
                         let new_score_add = (10 - gap_cost) as f64;
-                        let updated_path = (new_color, parent_path.1 + new_score_add, 0, parent_path.3);
+                        let updated_path =
+                            (new_color, parent_path.1 + new_score_add, 0, parent_path.3);
                         best_node_paths.push(updated_path);
                     }
                     //Just update the paths by increasing the distance by 1
                     else {
-                        let updated_path = (new_color, parent_path.1, parent_path.2 + 1, parent_path.3);
+                        let updated_path =
+                            (new_color, parent_path.1, parent_path.2 + 1, parent_path.3);
                         best_node_paths.push(updated_path);
                     }
                 }
@@ -468,8 +520,8 @@ pub fn get_best_path_from_chain2(
         if intermediate_node.color & all_colors != intermediate_node.color && parent_vec.len() > 0 {
             let remaining_colors = intermediate_node.color ^ all_colors;
             let mut lowest_score = 0.0;
-            for path in best_node_paths.iter(){
-                if lowest_score < path.1{
+            for path in best_node_paths.iter() {
+                if lowest_score < path.1 {
                     lowest_score = path.1;
                 }
             }
@@ -481,32 +533,29 @@ pub fn get_best_path_from_chain2(
                 best_node_paths.push((remaining_colors, lowest_score, 0, current_anchor_id));
             }
         }
-//        if intermediate_node.actual_ref_positions.len() > 0{
-//            dbg!(&best_node_paths, &intermediate_node);
-//        }
+        //        if intermediate_node.actual_ref_positions.len() > 0{
+        //            dbg!(&best_node_paths, &intermediate_node);
+        //        }
 
         let mut color_set = FxHashSet::default();
-        for path in best_node_paths.iter(){
-            if color_set.contains(&path.0){
-            dbg!(&best_node_paths, &intermediate_node);
-            for id in in_edges_dict.get(&intermediate_node.id).unwrap(){
-                dbg!(&ref_nodes[*id as usize]);
-            }
-            panic!();
-            }
-            else{
+        for path in best_node_paths.iter() {
+            if color_set.contains(&path.0) {
+                dbg!(&best_node_paths, &intermediate_node);
+                for id in in_edges_dict.get(&intermediate_node.id).unwrap() {
+                    dbg!(&ref_nodes[*id as usize]);
+                }
+                panic!();
+            } else {
                 color_set.insert(path.0);
             }
         }
-//        if intermediate_node.id == 274837{
-//            dbg!(&best_node_paths, &intermediate_node);
-//        }
+        //        if intermediate_node.id == 274837{
+        //            dbg!(&best_node_paths, &intermediate_node);
+        //        }
         best_paths.insert(intermediate_node.id, best_node_paths);
         if anchor_hit || unreachable_past {
             current_anchor_id += 1;
         }
-
-        
     }
 
     let mut best_path_color = u64::MAX;
@@ -524,13 +573,13 @@ pub fn get_best_path_from_chain2(
         }
     }
 
-    if best_path_score < -5000.0{
+    if best_path_score < -25000.0 {
         return (u64::MAX, vec![(0, 0)]);
     }
 
     let mut consistent_color_anchors = vec![];
-    for i in best_path_start_anchor..anchors.len(){
-//    for i in 0..anchors.len(){
+    for i in best_path_start_anchor..anchors.len() {
+        //    for i in 0..anchors.len(){
         let anchor = anchors[i];
         if &ref_nodes[anchor.0 as usize].color & best_path_color == best_path_color {
             consistent_color_anchors.push(anchor);
@@ -539,7 +588,6 @@ pub fn get_best_path_from_chain2(
 
     println!("{:?}", best_paths.get(&last_node.id));
     return (best_path_color, consistent_color_anchors);
-
 }
 
 pub fn get_best_path_from_chain(
