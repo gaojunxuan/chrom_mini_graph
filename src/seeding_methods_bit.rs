@@ -1,4 +1,4 @@
-use crate::data_structs::KmerNode;
+use crate::data_structs::{KmerNode,Color};
 use debruijn::dna_string::*;
 use debruijn::kmer::Kmer10;
 use debruijn::kmer::Kmer12;
@@ -120,7 +120,7 @@ pub fn minimizer_seeds(
                 order: positions_selected.len() as u32 - 1,
                 color: 1,
                 child_nodes: SmallVec::<[u32; 1]>::new(),
-                child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
+                child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
                 //            child_nodes: vec![],
                 canonical: canonical,
                 actual_ref_positions: SmallVec::<[usize; 0]>::new(),
@@ -149,13 +149,13 @@ pub fn minimizer_seeds(
             let dist_on_genome = positions_selected[0] + s.len() as u32 - positions_selected[i];
             minimizer_seeds[i]
                 .child_edge_distance
-                .push((dist_on_genome as u8, (1, 0)));
+                .push((dist_on_genome as u16, (1, 0)));
         } else {
             minimizer_seeds[i].child_nodes.push((i + 1) as u32);
             let dist_on_genome = positions_selected[i + 1] - positions_selected[i];
             minimizer_seeds[i]
                 .child_edge_distance
-                .push((dist_on_genome as u8, (1, 0)));
+                .push((dist_on_genome as u16, (1, 0)));
         }
     }
 
@@ -225,7 +225,7 @@ pub fn open_sync_seeds(
                         order: positions_selected.len() as u32 - 1,
                         color: 1,
                         child_nodes: SmallVec::<[u32; 1]>::new(),
-                        child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
+                        child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
                         canonical: canonical, //                    child_nodes: vec![],
                         actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                     };
@@ -259,7 +259,7 @@ pub fn open_sync_seeds(
                         order: positions_selected.len() as u32 - 1,
                         color: 1,
                         child_nodes: SmallVec::<[u32; 1]>::new(),
-                        child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
+                        child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
                         canonical: canonical, //                    child_nodes: vec![],
                         actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                     };
@@ -285,13 +285,13 @@ pub fn open_sync_seeds(
             let dist_on_genome = 1;
             syncmer_seeds[i]
                 .child_edge_distance
-                .push((dist_on_genome as u8, (1, 0)));
+                .push((dist_on_genome as u16, (1, 0)));
         } else {
             syncmer_seeds[i].child_nodes.push((i + 1) as u32);
             let dist_on_genome = positions_selected[i + 1] - positions_selected[i];
             syncmer_seeds[i]
                 .child_edge_distance
-                .push((dist_on_genome as u8, (1, 0)));
+                .push((dist_on_genome as u16, (1, 0)));
         }
     }
 

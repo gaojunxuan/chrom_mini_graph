@@ -1,8 +1,6 @@
-use crate::data_structs::KmerNode;
+use crate::data_structs::{KmerNode,Color};
 use std::hash::Hash;
 use std::collections::HashSet;
-use debruijn::Kmer;
-use debruijn::Mer;
 use fxhash::FxHashMap;
 use fxhash::FxHashSet;
 use smallvec::SmallVec;
@@ -19,8 +17,8 @@ where
 
 pub fn concat_graph<'a>(
     head: &KmerNode,
-    ref_nodes: &Vec<KmerNode>,
-) -> (Vec<(u32, u32, usize)>, FxHashMap<u32, Vec<u32>>) {
+    ref_nodes: &'a Vec<KmerNode>,
+) -> (Vec<(u32, u32, usize)>, FxHashMap<u32, Vec<u32>>, Vec<&'a KmerNode>) {
     let mut to_return = vec![];
     let mut bubble_nodes = FxHashSet::default();
     let mut in_edges = FxHashMap::default();
@@ -67,23 +65,23 @@ pub fn concat_graph<'a>(
             } else {
                 if intermediate_vertices.len() == 0 {
                     to_return.push((
-                        ref_nodes[*start_node as usize].order,
-                        ref_nodes[node as usize].order,
+                        ref_nodes[*start_node as usize].id,
+                        ref_nodes[node as usize].id,
                         len_edge,
                     ));
                 } else {
                     to_return.push((
-                        ref_nodes[*start_node as usize].order,
-                        ref_nodes[intermediate_vertices[0] as usize].order,
+                        ref_nodes[*start_node as usize].id,
+                        ref_nodes[intermediate_vertices[intermediate_vertices.len()/2] as usize].id,
                         len_edge,
                     ));
                     to_return.push((
-                        ref_nodes[intermediate_vertices[0] as usize].order,
-                        ref_nodes[node as usize].order,
+                        ref_nodes[intermediate_vertices[intermediate_vertices.len()/2] as usize].id,
+                        ref_nodes[node as usize].id,
                         len_edge,
                     ));
                     vertex_to_kmers_map
-                        .insert(intermediate_vertices[0], intermediate_vertices.clone());
+                        .insert(intermediate_vertices[intermediate_vertices.len()/2], intermediate_vertices.clone());
                     intermediate_vertices.clear();
                 }
                 len_edge = 0;
@@ -91,7 +89,12 @@ pub fn concat_graph<'a>(
         }
     }
 
-    return (to_return, vertex_to_kmers_map);
+    let mut all_unitig_nodes = vec![];
+    for (vertex_id, _vec) in vertex_to_kmers_map.iter() {
+        all_unitig_nodes.push(&ref_nodes[*vertex_id as usize]); 
+    }
+
+    return (to_return, vertex_to_kmers_map, all_unitig_nodes);
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -355,7 +358,7 @@ pub fn add_align_to_graph(
                     order: kmer1rorder,
                     kmer: strand_aln_nodes[i as usize].kmer,
                     child_nodes: SmallVec::<[u32; 1]>::new(),
-                    child_edge_distance: SmallVec::<[(u8, (u64, u8)); 1]>::new(),
+                    child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
                     color: 1,
                     //xnor hack. truth table is
                     //11 1

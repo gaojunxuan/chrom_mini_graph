@@ -17,7 +17,7 @@ if not use_graphviz:
     graph_deserial = []
     reads = dict()
     color = False
-    labels = False
+    labels = True
 
     if len(sys.argv) > 4:
         color = True

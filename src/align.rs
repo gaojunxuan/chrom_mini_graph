@@ -1,7 +1,10 @@
+use crate::align;
+use crate::data_structs::{Anchors,Color};
 use crate::data_structs::KmerNode;
 use block_aligner::cigar::*;
 use block_aligner::scan_block::*;
 use block_aligner::scores::*;
+use debruijn::dna_string::DnaString;
 use debruijn::dna_string::*;
 use debruijn::Kmer;
 use debruijn::Mer;
@@ -9,8 +12,31 @@ use fxhash::FxHashSet;
 use rust_htslib::bam::header::{Header, HeaderRecord};
 use rust_htslib::bam::record::{Cigar as hts_Cigar, CigarString, Record};
 use rust_htslib::bam::{Format, HeaderView, Writer};
+use std::time::Instant;
 
-pub fn get_first_nonzero_bit(n: usize) -> usize {
+pub fn get_nonzero_bits(n: Color) -> Vec<usize> {
+    let mut temp = n;
+    let mut bit_poses = vec![];
+    let mut bit_pos = 0;
+
+    assert!(n != 0);
+    let mut count = 0;
+    loop {
+        if count == 500 {
+            break;
+        }
+        if temp % 2 != 0 {
+            bit_poses.push(bit_pos);
+        } 
+        temp /= 2;
+        bit_pos += 1;
+        count += 1;
+    }
+
+    bit_poses
+}
+
+pub fn get_first_nonzero_bit(n: Color) -> usize {
     let mut temp = n;
     let mut bit_pos = 0;
 
@@ -31,7 +57,7 @@ pub fn get_coords(
     anchors: &Vec<(u32, u32)>,
     ref_nodes: &Vec<KmerNode>,
     q_nodes: &Vec<KmerNode>,
-    color: u64,
+    color: Color,
     chroms: &Vec<(DnaString, bool)>,
 ) -> ((i64, i64), Vec<(i64, usize)>) {
     //    for anchor in anchors.iter() {
@@ -43,7 +69,7 @@ pub fn get_coords(
     //            q_nodes[anchor.1 as usize].canonical
     //        );
     //    }
-    if color == u64::MAX {
+    if color == Color::MAX {
         return ((i64::MAX, i64::MAX), vec![]);
     }
     if anchors.len() == 0 {
@@ -127,6 +153,7 @@ pub fn get_coords(
             }
             //            dbg!(&parent_node.actual_ref_positions, path_dist, offset_count, bit, abs_pos_index);
         }
+        //Debugging
         if abs_pos_index != 0 && debug {
             let rep_kmer;
             if parent_node.canonical {
@@ -138,11 +165,12 @@ pub fn get_coords(
                 println!(
                     "{}, {}, {}",
                     chrom
-                        .slice(abs_pos_index + path_dist, abs_pos_index + 16 + path_dist)
+                        .slice(abs_pos_index + path_dist, abs_pos_index + 456 + path_dist)
                         .to_string(),
                     rep_kmer.to_string(),
-                    path_dist
+                    path_dist + abs_pos_index
                 );
+                dbg!(&parent_node.child_edge_distance);
                 if chrom
                     .slice(abs_pos_index + path_dist, abs_pos_index + path_dist + 16)
                     .to_string()
@@ -259,7 +287,7 @@ pub fn get_coords(
 pub fn write_bam_header(
     chroms: &Vec<(DnaString, bool)>,
     ref_names: &Vec<String>,
-    bam_name: String
+    bam_name: String,
 ) -> (HeaderView, Writer) {
     let mut header = Header::new();
     for (i, (reference, _strand)) in chroms.iter().enumerate() {
@@ -302,13 +330,18 @@ pub fn get_bam_record(
 
         hts_cigar_vec.push(hts_op);
     }
-    let mut scaled_quals = vec![0;quals.len()];
-    for (i,val) in quals.iter().enumerate(){
-        scaled_quals[i] = val-33;
+    let mut scaled_quals = vec![0; quals.len()];
+    for (i, val) in quals.iter().enumerate() {
+        scaled_quals[i] = val - 33;
     }
     let hts_cigar_view = CigarString(hts_cigar_vec);
     let hts_cigar = Some(hts_cigar_view);
-    rec.set(qname.as_bytes(), hts_cigar.as_ref(), &sequence.as_bytes(), &scaled_quals);
+    rec.set(
+        qname.as_bytes(),
+        hts_cigar.as_ref(),
+        &sequence.as_bytes(),
+        &scaled_quals,
+    );
 
     if strand == false {
         rec.set_reverse();
@@ -319,4 +352,155 @@ pub fn get_bam_record(
     rec.set_pos(map_pos);
     rec.set_mapq(60);
     return rec;
+}
+
+pub fn align_from_chain(
+    anchors: &Anchors,
+    chroms: &Vec<(DnaString, bool)>,
+    color: Color,
+    ref_graph: &Vec<KmerNode>,
+    read_seeds: &Vec<KmerNode>,
+    read: &DnaString,
+    read_strand: bool,
+    quals: &[u8],
+    chrom_names: &Vec<String>,
+    read_id: &String,
+    headerview: &HeaderView,
+    writer: &mut Writer,
+) {
+    println!("Aligning for colour {}", color);
+    if anchors.len() < 5 {
+        println!("Less than 5 anchors, bad align");
+        println!("Alignment score: NA");
+        return;
+    }
+
+    let ref_chrom = &chroms[chroms.len() - align::get_first_nonzero_bit(color) - 1].0;
+    let strand_chrom = &chroms[chroms.len() - align::get_first_nonzero_bit(color) - 1].1;
+    let now = Instant::now();
+    let (_ref_coords, kmer_hit_coords) =
+        align::get_coords(&anchors, &ref_graph, &read_seeds, color, &chroms);
+    println!("Get interval align time: {}", now.elapsed().as_secs_f32());
+    if kmer_hit_coords.len() < 5 {
+        println!("Less than 5 kmer hits, bad align");
+        println!("Alignment score: NA");
+        return;
+    }
+    //            dbg!(kmer_hit_coords[0]);
+    //            dbg!(kmer_hit_coords[1]);
+    //            dbg!(kmer_hit_coords.last().unwrap());
+    for (i, (c1, c2)) in kmer_hit_coords.iter().enumerate() {
+        let adj_c1;
+        if *c1 >= ref_chrom.len() as i64 {
+            //We don't want to do this right now because I believe minimizer distance
+            //across the ends of a reference genome isn't done properly...
+            adj_c1 = c1 - ref_chrom.len() as i64;
+        } else if *c1 < 0 {
+            adj_c1 = ref_chrom.len() as i64 + *c1;
+        } else {
+            adj_c1 = *c1;
+        }
+        let node = &read_seeds[anchors[i].1 as usize];
+        let r_node = &ref_graph[anchors[i].0 as usize];
+        let d1 = read.slice(*c2, *c2 + 16).to_string();
+        let d2 = node.kmer.to_string();
+        let d3 = node.kmer.rc().to_string();
+        let d4 = ref_chrom
+            .slice(adj_c1 as usize, adj_c1 as usize + 16)
+            .to_string();
+        let d5 = ref_chrom
+            .slice(adj_c1 as usize, adj_c1 as usize + 16)
+            .rc()
+            .to_string();
+        let d6 = read.slice(*c2, *c2 + 16).rc().to_string();
+        if d1 != d4 && d1 != d5 {
+            println!("NOT FOUND {} ! read and ref {} {} {} {}, len {}, c1 {}", i, d1, d6, d4, d5, kmer_hit_coords.len(), c1);
+        }
+        if d1 != d2 && d1 != d3 {
+            println!("NOT FOUND {} ! read and node {} {} {}", i, d1, d2, d3);
+        }
+    }
+
+    //GET THE REFERENCE STRING
+    let ref_map_string;
+    let a;
+    let b;
+    if *strand_chrom {
+        a = kmer_hit_coords[0].0;
+        if kmer_hit_coords.last().unwrap().0 < a {
+            b = ref_chrom.len() as i64;
+            println!("Circular mapping b. Cut off TODO. Not implemented yet?");
+        } else {
+            b = kmer_hit_coords.last().unwrap().0 + 16;
+        }
+        if b as usize > ref_chrom.len() {
+            println!("End of chromosome mapping issue. Continue");
+            return;
+        }
+        ref_map_string = ref_chrom.slice(a as usize, b as usize).to_string();
+    } else {
+        b = kmer_hit_coords[0].0 + 16;
+        if kmer_hit_coords.last().unwrap().0 < 0 {
+            a = 0;
+            println!("Circular mapping a. Cut off TODO. Not implemented yet?");
+        } else {
+            a = kmer_hit_coords.last().unwrap().0;
+        }
+        if b as usize > ref_chrom.len() {
+            println!("End of chromosome mapping issue. Continue");
+            return;
+        }
+        ref_map_string = ref_chrom.slice(a as usize, b as usize).rc().to_string();
+    }
+    let start_pos_chrom;
+    if read_strand == *strand_chrom {
+        start_pos_chrom = a;
+    } else {
+        start_pos_chrom = a;
+    }
+    let read_map_string;
+    let qual_map_string;
+    if read_strand {
+        read_map_string = read
+            .slice(kmer_hit_coords[0].1, kmer_hit_coords.last().unwrap().1 + 16)
+            .to_string();
+        qual_map_string = &quals[kmer_hit_coords[0].1..kmer_hit_coords.last().unwrap().1 + 16];
+    } else {
+        read_map_string = read
+            .slice(kmer_hit_coords.last().unwrap().1, kmer_hit_coords[0].1 + 16)
+            .rc()
+            .to_string();
+        qual_map_string = &quals[kmer_hit_coords.last().unwrap().1..kmer_hit_coords[0].1 + 16];
+    }
+
+    //ALIGNMENT
+    let now = Instant::now();
+    let block_size = 16;
+    let r = PaddedBytes::from_string::<NucMatrix>(ref_map_string, block_size);
+    let q = PaddedBytes::from_string::<NucMatrix>(read_map_string.clone(), block_size);
+    let gaps = Gaps {
+        open: -2,
+        extend: -1,
+    };
+
+    let a = Block::<_, true, false>::align(&q, &r, &NW1, gaps, block_size..=block_size, 50);
+
+    let res = a.res();
+    let cigar = a.trace().cigar(res.query_idx, res.reference_idx);
+    println!("Aligning time: {}", now.elapsed().as_secs_f32());
+    println!("Alignment score: {}", res.score);
+    let ref_chrom_name =
+        &chrom_names[chroms.len() - align::get_first_nonzero_bit(color) - 1];
+    let bam_rec = align::get_bam_record(
+        cigar,
+        &read_map_string,
+        qual_map_string,
+        &read_id,
+        read_strand,
+        ref_chrom_name,
+        start_pos_chrom,
+        &headerview,
+    );
+
+    writer.write(&bam_rec).unwrap();
 }
