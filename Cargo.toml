@@ -14,11 +14,17 @@ debruijn = "*"
 disjoint-sets = "*"
 smallvec = { version = "*", features = ["union","serde"] }
 block-aligner = { version = "^0.2.0", features = ["simd_avx2"] }
+libwfa = "0.1"
 serde = "*"
 serde_json = "1.0"
 clap = "*"
 bincode = "*"
 rust-htslib = "*"
+smartcore = "*"
+linfa = { version = "*", features = ["openblas-static"] }
+linfa-elasticnet = "*"
+ndarray = "*"
+probability = "*"
 
 [profile.release]
 opt-level = 3

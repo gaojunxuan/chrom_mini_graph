@@ -5,3 +5,4 @@ pub mod seeding_methods_bit;
 pub mod chain;
 pub mod data_structs;
 pub mod align;
+pub mod deconvolution;

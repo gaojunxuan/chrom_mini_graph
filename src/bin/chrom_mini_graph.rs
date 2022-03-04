@@ -108,9 +108,21 @@ fn main() {
                         .help("Short read parameters. (Default: Long read params.)")
                 ).
                 arg(
+                    Arg::with_name("deconvolve")
+                        .short("D")
+                        .help("Deconvolve stuff (Default: off)")
+                ).
+                arg(
                     Arg::with_name("penalty")
                         .short("p")
                         .help("Short read parameters. (Default: Long read params.)")
+                        .hidden(true)
+                        .takes_value(true)
+                ).
+                arg(
+                    Arg::with_name("samp_freq_decon")
+                        .short("f")
+                        .help("Graph sampling frequency for strain detect. (Default: 30)")
                         .takes_value(true)
                 )
         )
@@ -139,6 +151,12 @@ fn main() {
     } else {
         align = false;
     }
+    let deconvolve;
+    if matches_subc.is_present("deconvolve") {
+        deconvolve = true;
+    } else {
+        deconvolve = false;
+    }
 
     let w = 16;
     let k = 16;
@@ -147,7 +165,6 @@ fn main() {
     let t = (k - s + 2) / 2 as usize;
     let h = 50;
     let samp_freq = 100;
-    let samp_freq_decon = 100;
     //use syncmers if not using minimizers
 
     let use_minimizers;
@@ -415,6 +432,12 @@ fn main() {
             .parse()
             .unwrap();
 
+        let samp_freq_decon: usize = matches_subc
+            .value_of("samp_freq_decon")
+            .unwrap_or("30")
+            .parse()
+            .unwrap();
+
         let ref_graph_f = File::open(ref_graph_file).unwrap();
         let ref_graph_reader = BufReader::new(ref_graph_f);
 
@@ -456,7 +479,6 @@ fn main() {
 
         let ref_hash_map = chain::get_kmer_dict(&ref_graph);
         let mut anchor_file = BufWriter::new(File::create("read_anchor_hits.txt").unwrap());
-        let mut read_class_file = BufWriter::new(File::create("read_class.txt").unwrap());
         let (headerview, mut writer) =
             align::write_bam_header(&chroms, &chrom_names, bam_name.to_string());
 
@@ -464,14 +486,13 @@ fn main() {
         //        let simplified_graph = graph_utils::concat_graph(&ref_graph[0], &ref_graph);
         //        println!("Graph simp time {}", graph_simp_time.elapsed().as_secs_f32());
 
-        let mut sampled_count_graph =
-            deconvolution::subsampled_count_graph(&ref_graph, samp_freq_decon, chroms.len());
         let mut successful_chains = vec![];
         let start_align = Instant::now();
 
         for (read, read_id, quals) in reads {
             let mut best_colors_both_strands = vec![];
             let mut best_anchors_both_strands = vec![];
+            let mut strand_anchor_vec = vec![];
             println!("---------------Read: {}---------------", read_id);
             let mut read_seeds;
             let s2;
@@ -522,82 +543,58 @@ fn main() {
                         }
                     }
                     let now = Instant::now();
+
                     let (best_colors, best_list_anchors) = chain::get_best_path_from_chain2(
                         best_anchors,
                         &ref_graph,
                         &order_to_id,
                         read_seeds.len() as u32,
                     );
+
                     println!("Path collection time: {}", now.elapsed().as_secs_f32());
 
                     for i in 0..best_colors.len() {
                         best_colors_both_strands.push(best_colors[i]);
                         best_anchors_both_strands.push(best_list_anchors[i].clone());
-                    }
-
-                    for i in 0..best_colors.len() {
-                        let color = &best_colors[i];
-                        println!("{}", color);
-                        let (anchors, _path_score) = &best_list_anchors[i];
-                        if align {
-                            align::align_from_chain(
-                                anchors,
-                                &chroms,
-                                *color,
-                                &ref_graph,
-                                &read_seeds,
-                                &read,
-                                *read_strand,
-                                &quals,
-                                &chrom_names,
-                                &read_id,
-                                &headerview,
-                                &mut writer,
-                            );
-                        }
+                        strand_anchor_vec.push(*read_strand);
                     }
                 }
             }
 
-            deconvolution::update_count_graph(
-                &mut successful_chains,
-                &ref_graph,
-                &mut sampled_count_graph,
-                &mut anc_score_strand_vec,
-                short_reads,
-            );
+            if align {
+            let best_index = best_anchors_both_strands
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.1.partial_cmp(&b.1).unwrap())
+                .map(|(index, _)| index).unwrap();
+                let anchors = &best_anchors_both_strands[best_index].0;
+                let color = &best_colors_both_strands[best_index];
+                let read_strand = strand_anchor_vec[best_index];
 
-            //Classify meta, TODO refactor
-            //            if !dont_output_stuff {
-            //                if best_anchors_both_strands.len() == 0{
-            //                    continue
-            //                }
-            //                let best_path_score = best_anchors_both_strands
-            //                    .iter()
-            //                    .max_by(|x, y| x.1.partial_cmp(&y.1).unwrap())
-            //                    .unwrap()
-            //                    .1;
-            //                for i in 0..best_colors_both_strands.len() {
-            //                    let color = &best_colors_both_strands[i];
-            //                    let (anchors, path_score) = &best_anchors_both_strands[i];
-            //
-            //                    if anchors.len() < 5
-            //                        || best_path_score > 0.5 * anchors.len() as f64 + path_score
-            //                    {
-            //                        continue;
-            //                    }
-            //                    let bit_poses = align::get_nonzero_bits(*color);
-            //                    for bit in bit_poses {
-            //                        let ref_chrom_name = &chrom_names[chroms.len() - bit - 1];
-            //                        write!(
-            //                            &mut read_class_file,
-            //                            "{}\t{}\t{}\n",
-            //                            read_id, ref_chrom_name, path_score
-            //                        )
-            //                        .unwrap();
-            //                    }
-            //                }
-            //            }
+                align::align_from_chain(
+                    anchors,
+                    &chroms,
+                    *color,
+                    &ref_graph,
+                    &read_seeds,
+                    &read,
+                    read_strand,
+                    &quals,
+                    &chrom_names,
+                    &read_id,
+                    &headerview,
+                    &mut writer,
+                );
+            }
+
+            if deconvolve {
+                deconvolution::collect_good_chains(
+                    &mut successful_chains,
+                    &mut anc_score_strand_vec,
+                    short_reads,
+                    read_id.clone(),
+                );
+            }
         }
 
         println!(
@@ -605,13 +602,17 @@ fn main() {
             start_align.elapsed().as_secs_f32()
         );
 
-        deconvolution::solve_coeffs(
-            &successful_chains,
-            sampled_count_graph,
-            &ref_graph,
-            chrom_names.len(),
-            &chrom_names,
-            penalty,
-        );
+        if deconvolve {
+            let sampled_count_graph =
+                deconvolution::subsampled_ref_graph(&ref_graph, samp_freq_decon, chroms.len());
+            deconvolution::solve_coeffs(
+                &successful_chains,
+                sampled_count_graph,
+                &ref_graph,
+                chrom_names.len(),
+                &chrom_names,
+                penalty,
+            );
+        }
     }
 }

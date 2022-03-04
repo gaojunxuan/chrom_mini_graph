@@ -1,6 +1,6 @@
 use crate::align;
-use crate::data_structs::{Anchors,Color};
 use crate::data_structs::KmerNode;
+use crate::data_structs::{Anchors, Color};
 use block_aligner::cigar::*;
 use block_aligner::scan_block::*;
 use block_aligner::scores::*;
@@ -13,7 +13,7 @@ use rust_htslib::bam::header::{Header, HeaderRecord};
 use rust_htslib::bam::record::{Cigar as hts_Cigar, CigarString, Record};
 use rust_htslib::bam::{Format, HeaderView, Writer};
 use std::time::Instant;
-
+#[inline]
 pub fn get_nonzero_bits(n: Color) -> Vec<usize> {
     let mut temp = n;
     let mut bit_poses = vec![];
@@ -27,7 +27,7 @@ pub fn get_nonzero_bits(n: Color) -> Vec<usize> {
         }
         if temp % 2 != 0 {
             bit_poses.push(bit_pos);
-        } 
+        }
         temp /= 2;
         bit_pos += 1;
         count += 1;
@@ -36,6 +36,7 @@ pub fn get_nonzero_bits(n: Color) -> Vec<usize> {
     bit_poses
 }
 
+#[inline]
 pub fn get_first_nonzero_bit(n: Color) -> usize {
     let mut temp = n;
     let mut bit_pos = 0;
@@ -98,7 +99,7 @@ pub fn get_coords(
     let first_node = &ref_nodes[anchors[0].0 as usize];
     let last_node = &ref_nodes[anchors[anchors.len() - 1].0 as usize];
     let mut parent_node = first_node;
-    let mut chrom = &chroms[chroms.len() - bit_pos - 1].0;
+    let chrom = &chroms[chroms.len() - bit_pos - 1].0;
     let strand = chroms[chroms.len() - bit_pos - 1].1;
     let mut num_trav = 0;
     let mut current_anchor = 0;
@@ -301,7 +302,7 @@ pub fn write_bam_header(
 }
 
 pub fn get_bam_record(
-    cigar: Cigar,
+    cigar: Vec<OpLen>,
     sequence: &String,
     quals: &[u8],
     qname: &String,
@@ -414,7 +415,16 @@ pub fn align_from_chain(
             .to_string();
         let d6 = read.slice(*c2, *c2 + 16).rc().to_string();
         if d1 != d4 && d1 != d5 {
-            println!("NOT FOUND {} ! read and ref {} {} {} {}, len {}, c1 {}", i, d1, d6, d4, d5, kmer_hit_coords.len(), c1);
+            println!(
+                "NOT FOUND {} ! read and ref {} {} {} {}, len {}, c1 {}",
+                i,
+                d1,
+                d6,
+                d4,
+                d5,
+                kmer_hit_coords.len(),
+                c1
+            );
         }
         if d1 != d2 && d1 != d3 {
             println!("NOT FOUND {} ! read and node {} {} {}", i, d1, d2, d3);
@@ -473,34 +483,142 @@ pub fn align_from_chain(
         qual_map_string = &quals[kmer_hit_coords.last().unwrap().1..kmer_hit_coords[0].1 + 16];
     }
 
+    let block_align = true;
+    let wfa = false;
+
     //ALIGNMENT
-    let now = Instant::now();
-    let block_size = 16;
-    let r = PaddedBytes::from_string::<NucMatrix>(ref_map_string, block_size);
-    let q = PaddedBytes::from_string::<NucMatrix>(read_map_string.clone(), block_size);
-    let gaps = Gaps {
-        open: -2,
-        extend: -1,
-    };
+    if block_align {
+        let now = Instant::now();
+        let block_size = 64;
+        let r = PaddedBytes::from_string::<NucMatrix>(ref_map_string, block_size);
+        let q = PaddedBytes::from_string::<NucMatrix>(read_map_string.clone(), block_size);
+        let gaps = Gaps {
+            open: -4,
+            extend: -2,
+        };
 
-    let a = Block::<_, true, false>::align(&q, &r, &NW1, gaps, block_size..=block_size, 50);
+        let nuc_mat: NucMatrix = NucMatrix::new_simple(2, -4);
+        let a = Block::<_, true, false>::align(&q, &r, &nuc_mat, gaps, block_size..=block_size, 50);
 
-    let res = a.res();
-    let cigar = a.trace().cigar(res.query_idx, res.reference_idx);
-    println!("Aligning time: {}", now.elapsed().as_secs_f32());
-    println!("Alignment score: {}", res.score);
-    let ref_chrom_name =
-        &chrom_names[chroms.len() - align::get_first_nonzero_bit(color) - 1];
-    let bam_rec = align::get_bam_record(
-        cigar,
-        &read_map_string,
-        qual_map_string,
-        &read_id,
-        read_strand,
-        ref_chrom_name,
-        start_pos_chrom,
-        &headerview,
-    );
+        let res = a.res();
+        let cigar = a.trace().cigar(res.query_idx, res.reference_idx);
+        println!("Aligning time: {}", now.elapsed().as_secs_f32());
+        println!("Alignment score: {}", res.score);
+        let ref_chrom_name = &chrom_names[chroms.len() - align::get_first_nonzero_bit(color) - 1];
+        let bam_rec = align::get_bam_record(
+            cigar.to_vec(),
+            &read_map_string,
+            qual_map_string,
+            &read_id,
+            read_strand,
+            ref_chrom_name,
+            start_pos_chrom,
+            &headerview,
+        );
 
-    writer.write(&bam_rec).unwrap();
+        writer.write(&bam_rec).unwrap();
+    } else if wfa {
+        //Testing out WFA alignment. Seems to be worse than blockaligner. 
+        use libwfa::{affine_wavefront::*, bindings::*, mm_allocator::*, penalties::*};
+
+        let alloc = MMAllocator::new(BUFFER_SIZE_1G as u64);
+        let min_wavefront_length = 10;
+        let max_distance_threshold = 50;
+
+        let pattern = ref_map_string.to_string();
+        let text = read_map_string.to_string();
+
+        let mut penalties = AffinePenalties {
+            match_: 0,
+            mismatch: 4,
+            gap_opening: 6,
+            gap_extension: 2,
+        };
+
+        let pat_len = pattern.as_bytes().len();
+        let text_len = text.as_bytes().len();
+
+        let mut wavefronts = AffineWavefronts::new_reduced(
+            pat_len,
+            text_len,
+            &mut penalties,
+            min_wavefront_length,
+            max_distance_threshold,
+            &alloc,
+        );
+
+        wavefronts
+            .align(pattern.as_bytes(), text.as_bytes())
+            .unwrap();
+
+        let score = wavefronts.edit_cigar_score(&mut penalties);
+
+        println!("score: {}", score);
+
+        // The cigar can also be extracted as a byte vector
+        let cigar = wavefronts.cigar_bytes_raw();
+        let cg_str = std::str::from_utf8(&cigar).unwrap();
+
+        let mut op_vec = vec![];
+        let mut prev_char = 'A';
+        let mut running_len = 0;
+        for c in cg_str.chars() {
+            if c != prev_char && running_len != 0 {
+                let op;
+                if prev_char == 'X' {
+                    op = Operation::M;
+                } else if prev_char == 'M' {
+                    op = Operation::M;
+                } else if prev_char == 'I' {
+                    op = Operation::I;
+                } else if prev_char == 'D' {
+                    op = Operation::D;
+                } else {
+                    panic!("{}\n{}", prev_char, cg_str);
+                    op = Operation::Sentinel;
+                }
+
+                op_vec.push(OpLen {
+                    op: op,
+                    len: running_len,
+                });
+                running_len = 0;
+                prev_char = c;
+            }
+            running_len += 1;
+            prev_char = c;
+        }
+        let op;
+        if prev_char == 'X' {
+            op = Operation::M;
+        } else if prev_char == 'M' {
+            op = Operation::M;
+        } else if prev_char == 'I' {
+            op = Operation::I;
+        } else if prev_char == 'D' {
+            op = Operation::D;
+        } else {
+            panic!("{}\n{}", prev_char, cg_str);
+            op = Operation::Sentinel;
+        }
+        op_vec.push(OpLen {
+            op: op,
+            len: running_len,
+        });
+
+        let ref_chrom_name = &chrom_names[chroms.len() - align::get_first_nonzero_bit(color) - 1];
+        println!("cigar_str: {}", cg_str);
+        let bam_rec = align::get_bam_record(
+            op_vec,
+            &read_map_string,
+            qual_map_string,
+            &read_id,
+            read_strand,
+            ref_chrom_name,
+            start_pos_chrom,
+            &headerview,
+        );
+
+        writer.write(&bam_rec).unwrap();
+    }
 }
