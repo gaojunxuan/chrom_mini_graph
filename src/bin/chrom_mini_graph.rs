@@ -84,7 +84,7 @@ fn main() {
                 arg(
                     Arg::with_name("chain_heuristic")
                         .short("d")
-                        .help("Use minimap2 chaining heuristic. (Default: use linearization heuristic)")
+                        .help("Use linearization heuristic instead of DAG-aware heuristic. (Default: use linearization heuristic)")
                 ).
                 arg(
                     Arg::with_name("dont_output_stuff")
@@ -176,9 +176,9 @@ fn main() {
 
     let chain_heuristic;
     if matches_subc.is_present("chain_heuristic") {
-        chain_heuristic = true;
-    } else {
         chain_heuristic = false;
+    } else {
+        chain_heuristic = true;
     }
 
     if generate {
@@ -553,6 +553,7 @@ fn main() {
 
                     println!("Path collection time: {}", now.elapsed().as_secs_f32());
 
+                    //TODO don't want to do clone every anchor list. 
                     for i in 0..best_colors.len() {
                         best_colors_both_strands.push(best_colors[i]);
                         best_anchors_both_strands.push(best_list_anchors[i].clone());

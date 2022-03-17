@@ -280,7 +280,6 @@ pub fn chain_seeds<'a>(
     let mut backward_anchors = vec![];
     let mut backward_hits_set = FxHashSet::default();
 
-    let mut most_repet_kmer = -1;
     for kmer in q_hash_map.keys() {
         if not_used_kmers.contains(kmer) {
             continue;
@@ -326,10 +325,6 @@ pub fn chain_seeds<'a>(
         forward_strand = true;
     }
 
-    if !chain_reads {
-        println!("Most repetitive k-mer gives {} anchors", most_repet_kmer);
-    }
-
     println!(
         "Num forward/back anchors {},{}, Query length {}",
         forward_anchors.len(), backward_anchors.len(), seeds_q.len()
@@ -358,7 +353,6 @@ pub fn chain_seeds<'a>(
             .collect();
         //vec![(best_chain, aln_score, forward_strand)];
     } else {
-        println!("Ambiguous strand");
         forward_strand = true;
         let chains_scores_forward = get_chains(
             seeds_ref,
@@ -647,11 +641,9 @@ pub fn get_best_path_from_chain2(
     }
 
     for path in best_path.unwrap() {
-        if path.1 + anchors.len() as f64 * 0.5 > best_path_score {
-            best_path_colors.push(path.0);
-            best_path_scores.push(path.1);
-            best_path_start_anchors.push(path.3);
-        }
+        best_path_colors.push(path.0);
+        best_path_scores.push(path.1);
+        best_path_start_anchors.push(path.3);
     }
 
     let mut consistent_color_anchors = vec![];
@@ -1194,7 +1186,7 @@ fn get_best_chains(
 
         //    dbg!(f[best_i]);
 
-        println!("Chain score {}, Color {:?}, Length {}", ith_score, align::get_nonzero_bits(color), best_seq_anchors.len());
+        println!("Chain number {}, Chain score {}, Color {:?}, Length {}",i, ith_score, align::get_nonzero_bits(color), best_seq_anchors.len());
         println!(
             "End/start of ref anchors: {},{}",
             seeds_ref[anchors[chain_sequence[0]].0 as usize].order,
