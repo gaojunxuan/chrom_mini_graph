@@ -106,24 +106,27 @@ fn main() {
                     Arg::with_name("short_reads")
                         .short("x")
                         .help("Short read parameters. (Default: Long read params.)")
+                        .hidden(true)
                 ).
                 arg(
                     Arg::with_name("deconvolve")
                         .short("D")
                         .help("Deconvolve stuff (Default: off)")
+                        .hidden(true)
                 ).
                 arg(
                     Arg::with_name("penalty")
                         .short("p")
                         .help("Short read parameters. (Default: Long read params.)")
-                        .hidden(true)
                         .takes_value(true)
+                        .hidden(true)
                 ).
                 arg(
                     Arg::with_name("samp_freq_decon")
                         .short("f")
                         .help("Graph sampling frequency for strain detect. (Default: 30)")
                         .takes_value(true)
+                        .hidden(true)
                 )
         )
         .get_matches();
@@ -479,6 +482,7 @@ fn main() {
 
         let ref_hash_map = chain::get_kmer_dict(&ref_graph);
         let mut anchor_file = BufWriter::new(File::create("read_anchor_hits.txt").unwrap());
+        let mut best_genomes_file = File::create("best_genome_reads.txt").unwrap();
         let (headerview, mut writer) =
             align::write_bam_header(&chroms, &chrom_names, bam_name.to_string());
 
@@ -553,7 +557,7 @@ fn main() {
 
                     println!("Path collection time: {}", now.elapsed().as_secs_f32());
 
-                    //TODO don't want to do clone every anchor list. 
+                    //TODO don't want to do clone every anchor list.
                     for i in 0..best_colors.len() {
                         best_colors_both_strands.push(best_colors[i]);
                         best_anchors_both_strands.push(best_list_anchors[i].clone());
@@ -563,11 +567,28 @@ fn main() {
             }
 
             if align {
-            let best_index = best_anchors_both_strands
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.1.partial_cmp(&b.1).unwrap())
-                .map(|(index, _)| index).unwrap();
+                use std::cmp::min;
+                //Print best anchors
+                let mut best_indices = best_anchors_both_strands
+                    .iter()
+                    .enumerate()
+                    .collect::<Vec<(_,_)>>();
+                best_indices.sort_by(|(_, a), (_, b)| b.1.partial_cmp(&a.1).unwrap());
+                let best_indices : Vec<usize>= best_indices
+                    .iter()
+                    .map(|(index, _)| *index).collect();
+                let top_n = 5;
+                writeln!(&mut best_genomes_file, ">{}", &read_id).unwrap();
+                for _i in 0..min(top_n,best_indices.len()){
+                    let ith_color = best_colors_both_strands[best_indices[_i]];
+                    let ith_score = best_anchors_both_strands[best_indices[_i]].1;
+                    let ith_ref_chroms = align::get_nonzero_bits(ith_color);
+                    for bit in ith_ref_chroms{
+                        writeln!(&mut best_genomes_file, "{}\t{}", &chrom_names[chroms.len() - bit - 1], ith_score).unwrap();
+                    }
+                }
+
+                let best_index = best_indices[0];
                 let anchors = &best_anchors_both_strands[best_index].0;
                 let color = &best_colors_both_strands[best_index];
                 let read_strand = strand_anchor_vec[best_index];

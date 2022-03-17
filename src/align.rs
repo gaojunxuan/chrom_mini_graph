@@ -369,7 +369,7 @@ pub fn align_from_chain(
     headerview: &HeaderView,
     writer: &mut Writer,
 ) {
-    println!("Aligning for colour {}", color);
+    println!("Aligning to genome corresponding to colour {}", color);
     if anchors.len() < 5 {
         println!("Less than 5 anchors, bad align");
         println!("Alignment score: NA");
