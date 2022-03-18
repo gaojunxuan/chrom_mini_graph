@@ -14,13 +14,12 @@ git clone https://github.com/bluenote-1577/chrom_mini_graph
 cd chrom_mini_graph
 cargo build --release
 ./target/release/chrom_mini_graph generate test_refs/*
-./target/release/chrom_mini_graph map serialized_mini_graph.bin test_reads/hg_01243_pacbio_reads.fastq -b hg-01243-reads.bam > output.txt
+./target/release/chrom_mini_graph map -a -b test_bam.bam serialized_mini_graph.bin test_reads/hg_01243_pacbio_reads.fastq > output.txt
 ```
 
 1. `cargo build --release` first builds the **chrom_mini_graph** binary, which is found in the ./target/release/ directory.
 2. The `chrom_mini_graph generate` command generates a coloured minimizer pangenome graph. 
-3. The `chrom_mini_graph map` command chains onto the output graph and produces an alignment.
-4. The resulting chain is used for alignment and is output to `hg-01243-reads.bam`. 
+3. The `chrom_mini_graph map` command chains onto the output graph and produces an alignment. The `-a` option outputs a BAM file with name specified by the `-b` option.
 
 * 6 reference 1M bp segments of chromosome 20 are provided in the test_ref folder. 
 * Simulated PacBio CLR reads for hg01243 are available in the test_reads folder. 
@@ -29,54 +28,39 @@ cargo build --release
 
 ## generate
 
-`chrom_mini_graph generate ref_1.fasta ref_2.fasta ... -o output_from_generate` to create a coloured minimizer pangenome graph for references ref_1.fasta, ref_2.fasta, etc. 
+`chrom_mini_graph generate ref_1.fasta ref_2.fasta ... -o output_from_generate` to create a coloured minimizer pangenome graph for references ref_1.fasta, ref_2.fasta, etc. The output specified by the `-o` option is used for the mapping step. 
 
 * The window size can be easily modified in the `src/bin/chrom_mini_graph.rs` file. The default value is 16.
 * Outputs a \*.bin file to be used for mapping and other auxillary information; see below. 
+* Each fasta file can have multiple contigs. Each contig will be treated as its own reference genome.
+
+###Ordering for `generate`
+
+The first reference used (i.e. `ref_1.fasta`) serves as the backbone for the minimizer graph. Make sure that this first reference is the most contiguous contig. 
 
 ## map
 
-A proof of concept read-to-graph chainer by chaining minimizers in the read onto the graph without knowledge of colour and then outputting the scores corresponding to each colouring.
+A proof of concept read-to-graph chainer by chaining minimizers in the read onto the graph without knowledge of colour and then finding the best colours (reference genomes) for the chain.
 
-`chrom_mini_graph map output_from_generate.bin your_reads.fastq -b bam_name.bam > output.txt`
+`chrom_mini_graph map -a output_from_generate.bin your_reads.fastq -b bam_name.bam > output.txt` outputs the bam file `bam_name.bam` and directs stdout to a output.txt log. 
 
-* In stdout, information about each alignment is output.
-* Chaining scores are output in the form (Colour Bits, Score , X, X) where the colour bits encode haplotypes. For example:  [(32, 3727.0, 0), (16, 3759.0, 0), (8, 3724.0, 0), (4, 3758.0, 0), (2, 3949.0, 0), (1, 3821.0, 0)]
-indicates that the colour corrresponding to 2 has the highest score; this is expected since hg01243 corresponds to the second smallest bit. 
-* For the best haplotype (if there is more than one, we pick one at random) according to chaining, we align to the haplotype using [block-aligner](https://github.com/Daniel-Liu-c0deb0t/block-aligner) and output results in the bam file.
+The file *best_genome_reads.txt* is also output. The `best_genome_reads.txt` shows the top 5 (or less) best candidate reference genomes for each read.  The format is 
+```
+>read_1
+chrom_1 score_1
+chrom_2 score_2
+...
+>read_2
+chrom_1 score_1
+chrom_2 score_2
+...
+```
 
-## Issues
+More than 5 best candidates may be output due to secondary alignments and less than 5 may be output if the read is deemed unmappable to certain references. 
 
-1. Aligning two big contigs (chromosomes) takes a long time right now; > 2000 seconds. This is caused by extremely repetitive kmers creating too many anchors. Will work on removing repetitive k-mers later on (i.e. masking repetitive kmers).
-2. If two contigs are dissimilar, the graph generation may be very poor. We find the best alignment and align no matter what; we don't check if the alignment is actually good or not. 
-3. I have not optimized the alignment. It seems like it is more likely to fail in noisy regions than minimap2 alignment. 
-4. Only one alignment is output per read. No supplementary/secondary alignments are output.
-5. Mapping near the start and ends of chromosomes may be wonky. 
+Caveats:
 
-## Outputs from `generate`
+* Only the best candidate genome is aligned to. 
+* No supplementary/secondary alignments are output in the bam file; MapQ is defaulted to 60. 
 
-### full_mini_graph.csv 
-
-This is a CSV file which indicates the edges for the entire graph. 
-
-### simpilified_mini_graph.csv
-
-This is a simplified version of the full_mini_graph.csv file. Linear paths are shortened. 
-
-### serialized_mini_graph.json
-
-This is the JSON serialization for the entire graph. See [this document](https://docs.google.com/document/d/1oRHjPgP-Bh9UkySCduWIl5yCpfiLVEoSnRdzdx4a7-Y/edit?usp=sharing) for how to deserialize the graph. **IMPORTANT:** For colouring, the most significant bit corresponds to the first genome in the command, and the least significant bit corresponds to the last genome in the command. 
-
-### serialized_mini_graph.bin
-
-Binary serializeation of the graph used in the `map` subcommand.
-
-## Outputs from `map`
-
-### read_anchor_hits.txt
-
-Gives the ids of the nodes corresponding to the best chain for each read. 
-
-### Visualization
-
-To quickly visualize the graph, do `python visualize_graph.py full_mini_graph.csv 26000 27000`. All nodes with ids between 26000 and 27000 will be visualized here. You need networkx, graphviz, matplotlib installed.
+<!--- This is the JSON serialization for the entire graph. See [this document](https://docs.google.com/document/d/1oRHjPgP-Bh9UkySCduWIl5yCpfiLVEoSnRdzdx4a7-Y/edit?usp=sharing) for how to deserialize the graph. **IMPORTANT:** For colouring, the most significant bit corresponds to the first genome in the command, and the least significant bit corresponds to the last genome in the command. --->
