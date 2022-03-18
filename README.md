@@ -34,7 +34,7 @@ cargo build --release
 * Outputs a \*.bin file to be used for mapping and other auxillary information; see below. 
 * Each fasta file can have multiple contigs. Each contig will be treated as its own reference genome.
 
-###Ordering for `generate`
+### Ordering for `generate`
 
 The first reference used (i.e. `ref_1.fasta`) serves as the backbone for the minimizer graph. Make sure that this first reference is the most contiguous contig. 
 
