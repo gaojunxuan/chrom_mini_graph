@@ -570,6 +570,10 @@ fn main() {
             }
 
             if align {
+                if best_anchors_both_strands.len() == 0{
+                    println!("No good alignment found");
+                    continue;
+                }
                 use std::cmp::min;
                 //Print best anchors
                 let mut best_indices = best_anchors_both_strands
