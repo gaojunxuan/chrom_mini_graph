@@ -303,7 +303,10 @@ fn main() {
                 .unwrap();
             //Need to reverse the read strand so that it is "forward". Bad mutability
             //design pattern here will change TODO
-            if forward_strand == false {
+            //Only need this for circula because circular does chaining for both strands,
+            //hence mutates the state back to normal. Needs to be reversed if 
+            //reverse is the best strand. Non-circular already reverses during the chaining.
+            if forward_strand == false && circular{
                 for node in seeds2.iter_mut() {
                     node.order = qlen as u32 - node.order - 1;
                     //            for child_id in node.child_nodes.iter_mut(){
