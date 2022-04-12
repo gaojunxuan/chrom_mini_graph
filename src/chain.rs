@@ -459,7 +459,7 @@ pub fn get_best_path_from_chain2(
     let mut current_anchor_id = 0;
 
     if anchors.len() == 0 {
-        return (vec![1], vec![(vec![], f64::MIN)]);
+        return (vec![], vec![]);
     }
 
     let last_node = &ref_nodes[anchors.last().unwrap().0 as usize];
@@ -627,7 +627,7 @@ pub fn get_best_path_from_chain2(
     let mut best_path_start_anchors = vec![];
     let best_path = best_paths.get(&last_node.id);
     if let None = best_path {
-        return (vec![Color::MAX], vec![(vec![], f64::MIN)]);
+        return (vec![], vec![]);
     }
     let best_path_score = best_path
         .unwrap()
@@ -637,7 +637,7 @@ pub fn get_best_path_from_chain2(
         .1;
 
     if best_path_score < -25000.0 {
-        return (vec![Color::MAX], vec![(vec![], f64::MIN)]);
+        return (vec![], vec![]);
     }
 
     for path in best_path.unwrap() {
