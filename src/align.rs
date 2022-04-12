@@ -244,6 +244,10 @@ pub fn get_coords(
             dbg!(num_trav, found, bit);
             dbg!(&parent_node, &last_node, &first_node);
             dbg!(&ref_nodes[parent_node.child_nodes[0] as usize]);
+            dbg!(&parent_node.order, last_node.order);
+            dbg!(visited_nodes.contains(&parent_node.id));
+            dbg!(path_dist);
+            dbg!(num_trav);
             panic!();
         }
     }

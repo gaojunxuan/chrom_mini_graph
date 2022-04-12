@@ -84,7 +84,7 @@ fn main() {
                 arg(
                     Arg::with_name("chain_heuristic")
                         .short("d")
-                        .help("Use linearization heuristic instead of DAG-aware heuristic. (Default: use linearization heuristic)")
+                        .help("Use linearization heuristic instead of DAG-aware heuristic. (Default: use chain heuristic)")
                 ).
                 arg(
                     Arg::with_name("dont_output_stuff")
