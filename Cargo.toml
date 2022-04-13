@@ -25,6 +25,7 @@ linfa = { version = "*", features = ["openblas-static"] }
 linfa-elasticnet = "*"
 ndarray = "*"
 probability = "*"
+rayon = "*"
 
 [profile.release]
 opt-level = 3

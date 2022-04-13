@@ -1,6 +1,6 @@
 use crate::align;
-use crate::data_structs::KmerNode;
 use crate::data_structs::{Anchors, Color};
+use crate::data_structs::{BamInfo, KmerNode};
 use block_aligner::cigar::*;
 use block_aligner::scan_block::*;
 use block_aligner::scores::*;
@@ -113,8 +113,8 @@ pub fn get_coords(
             current_anchor += 1;
         }
         if num_trav > 50000 {
-            dbg!(&parent_node);
-            dbg!(&ref_nodes[parent_node.child_nodes[0] as usize]);
+            //            dbg!(&parent_node);
+            //            dbg!(&ref_nodes[parent_node.child_nodes[0] as usize]);
         }
         visited_nodes.insert(parent_node.id);
         num_trav += 1;
@@ -237,9 +237,9 @@ pub fn get_coords(
         //        }
         if !found
             || parent_node.order > last_node.order
-            || path_dist > 500000
+            //|| path_dist > 10000000
             || visited_nodes.contains(&parent_node.id)
-            || num_trav > 80000
+        //|| num_trav > 80000
         {
             dbg!(num_trav, found, bit);
             dbg!(&parent_node, &last_node, &first_node);
@@ -306,17 +306,11 @@ pub fn write_bam_header(
 }
 
 pub fn get_bam_record(
-    cigar: Vec<OpLen>,
-    sequence: &String,
-    quals: &[u8],
-    qname: &String,
-    strand: bool,
-    ref_name: &String,
-    map_pos: i64,
+    bam_info: BamInfo,
     headerview: &HeaderView,
 ) -> Record {
     let mut rec = Record::new();
-    let cigar_vec = cigar.to_vec();
+    let cigar_vec = &bam_info.cigar;
     let mut hts_cigar_vec = vec![];
     for oplen in cigar_vec {
         let op = oplen.op;
@@ -335,27 +329,27 @@ pub fn get_bam_record(
 
         hts_cigar_vec.push(hts_op);
     }
-    let mut scaled_quals = vec![0; quals.len()];
-    for (i, val) in quals.iter().enumerate() {
+    let mut scaled_quals = vec![0; bam_info.quals.len()];
+    for (i, val) in bam_info.quals.iter().enumerate() {
         scaled_quals[i] = val - 33;
     }
     let hts_cigar_view = CigarString(hts_cigar_vec);
     let hts_cigar = Some(hts_cigar_view);
     rec.set(
-        qname.as_bytes(),
+        bam_info.qname.as_bytes(),
         hts_cigar.as_ref(),
-        &sequence.as_bytes(),
+        &bam_info.sequence.as_bytes(),
         &scaled_quals,
     );
 
-    if strand == false {
+    if bam_info.strand == false {
         rec.set_reverse();
     }
 
-    let tid = headerview.tid(ref_name.as_bytes()).unwrap();
+    let tid = headerview.tid(bam_info.ref_name.as_bytes()).unwrap();
     rec.set_tid(tid as i32);
-    rec.set_pos(map_pos);
-    rec.set_mapq(60);
+    rec.set_pos(bam_info.map_pos);
+    rec.set_mapq(bam_info.mapq);
     return rec;
 }
 
@@ -370,14 +364,14 @@ pub fn align_from_chain(
     quals: &[u8],
     chrom_names: &Vec<String>,
     read_id: &String,
-    headerview: &HeaderView,
-    writer: &mut Writer,
-) {
+//    headerview: &HeaderView,
+//    writer: &mut Writer,
+) -> Option<BamInfo> {
     println!("Aligning to genome corresponding to colour {}", color);
     if anchors.len() < 5 {
         println!("Less than 5 anchors, bad align");
         println!("Alignment score: NA");
-        return;
+        return None;
     }
 
     let ref_chrom = &chroms[chroms.len() - align::get_first_nonzero_bit(color) - 1].0;
@@ -389,7 +383,7 @@ pub fn align_from_chain(
     if kmer_hit_coords.len() < 5 {
         println!("Less than 5 kmer hits, bad align");
         println!("Alignment score: NA");
-        return;
+        return None;
     }
     //            dbg!(kmer_hit_coords[0]);
     //            dbg!(kmer_hit_coords[1]);
@@ -449,7 +443,7 @@ pub fn align_from_chain(
         }
         if b as usize > ref_chrom.len() {
             println!("End of chromosome mapping issue. Continue");
-            return;
+            return None;
         }
         ref_map_string = ref_chrom.slice(a as usize, b as usize).to_string();
     } else {
@@ -462,7 +456,7 @@ pub fn align_from_chain(
         }
         if b as usize > ref_chrom.len() {
             println!("End of chromosome mapping issue. Continue");
-            return;
+            return None;
         }
         ref_map_string = ref_chrom.slice(a as usize, b as usize).rc().to_string();
     }
@@ -488,7 +482,6 @@ pub fn align_from_chain(
     }
 
     let block_align = true;
-    let wfa = false;
 
     //ALIGNMENT
     if block_align {
@@ -509,20 +502,25 @@ pub fn align_from_chain(
         println!("Aligning time: {}", now.elapsed().as_secs_f32());
         println!("Alignment score: {}", res.score);
         let ref_chrom_name = &chrom_names[chroms.len() - align::get_first_nonzero_bit(color) - 1];
-        let bam_rec = align::get_bam_record(
-            cigar.to_vec(),
-            &read_map_string,
-            qual_map_string,
-            &read_id,
-            read_strand,
-            ref_chrom_name,
-            start_pos_chrom,
-            &headerview,
-        );
-
-        writer.write(&bam_rec).unwrap();
-    } else if wfa {
-        //Testing out WFA alignment. Seems to be worse than blockaligner. 
+        let bam_info = BamInfo {
+            cigar: cigar.to_vec(),
+            sequence: read_map_string,
+            quals: qual_map_string.to_owned(),
+            qname: read_id.clone(),
+            strand: read_strand,
+            ref_name: ref_chrom_name.clone(),
+            map_pos: start_pos_chrom,
+            mapq: 60
+        };
+        return Some(bam_info);
+//        let bam_rec = align::get_bam_record(
+//            bam_info,
+//            &headerview,
+//        );
+//
+//        writer.write(&bam_rec).unwrap();
+    } else {
+        //Testing out WFA alignment. Seems to be worse than blockaligner.
         use libwfa::{affine_wavefront::*, bindings::*, mm_allocator::*, penalties::*};
 
         let alloc = MMAllocator::new(BUFFER_SIZE_1G as u64);
@@ -603,7 +601,6 @@ pub fn align_from_chain(
             op = Operation::D;
         } else {
             panic!("{}\n{}", prev_char, cg_str);
-            op = Operation::Sentinel;
         }
         op_vec.push(OpLen {
             op: op,
@@ -612,17 +609,16 @@ pub fn align_from_chain(
 
         let ref_chrom_name = &chrom_names[chroms.len() - align::get_first_nonzero_bit(color) - 1];
         println!("cigar_str: {}", cg_str);
-        let bam_rec = align::get_bam_record(
-            op_vec,
-            &read_map_string,
-            qual_map_string,
-            &read_id,
-            read_strand,
-            ref_chrom_name,
-            start_pos_chrom,
-            &headerview,
-        );
-
-        writer.write(&bam_rec).unwrap();
+        let bam_info = BamInfo {
+            cigar: op_vec,
+            sequence: read_map_string,
+            quals: qual_map_string.to_owned(),
+            qname: read_id.clone(),
+            strand: read_strand,
+            ref_name: ref_chrom_name.clone(),
+            map_pos: start_pos_chrom,
+            mapq: 60
+        };
+        return Some(bam_info);
     }
 }

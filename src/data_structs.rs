@@ -1,6 +1,7 @@
 use debruijn::kmer::Kmer16;
 use smallvec::SmallVec;
 use serde::{Serialize, Deserialize};
+use block_aligner::cigar::*;
 
 pub type Anchors = Vec<(u32, u32)>;
 pub type Color = u128;
@@ -17,4 +18,15 @@ pub struct KmerNode{
     pub id: u32,
     pub canonical: bool,
     pub actual_ref_positions: SmallVec<[usize;0]>,
+}
+
+pub struct BamInfo{
+    pub cigar: Vec<OpLen>,
+    pub sequence: String,
+    pub quals: Vec<u8>,
+    pub qname: String,
+    pub strand: bool,
+    pub ref_name: String,
+    pub map_pos: i64,
+    pub mapq: u8,
 }

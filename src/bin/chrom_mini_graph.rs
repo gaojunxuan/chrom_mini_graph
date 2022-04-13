@@ -14,10 +14,12 @@ use debruijn::kmer::Kmer16;
 use debruijn::Kmer;
 use debruijn::Mer;
 use fxhash::{FxHashMap, FxHashSet};
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{BufReader, BufWriter};
 use std::mem;
+use std::sync::Mutex;
 use std::time::Instant;
 
 fn main() {
@@ -75,6 +77,12 @@ fn main() {
                         .required(true)
                         .index(2)
                         .help("Reads to map to graph. Only support fastq right now."),
+                ).
+                arg(Arg::with_name("threads")
+                  .short("t")
+                  .help("Number of threads to use. (default: 10).")
+                  .value_name("INT")
+                  .takes_value(true)
                 ).
                 arg(
                     Arg::with_name("syncmer")
@@ -166,7 +174,7 @@ fn main() {
     let mask_repet_on_generate = true;
     let s = 10;
     let t = (k - s + 2) / 2 as usize;
-    let h = 50;
+    let h = 100;
     let samp_freq = 100;
     //use syncmers if not using minimizers
 
@@ -304,9 +312,9 @@ fn main() {
             //Need to reverse the read strand so that it is "forward". Bad mutability
             //design pattern here will change TODO
             //Only need this for circula because circular does chaining for both strands,
-            //hence mutates the state back to normal. Needs to be reversed if 
+            //hence mutates the state back to normal. Needs to be reversed if
             //reverse is the best strand. Non-circular already reverses during the chaining.
-            if forward_strand == false && circular{
+            if forward_strand == false && circular {
                 for node in seeds2.iter_mut() {
                     node.order = qlen as u32 - node.order - 1;
                     //            for child_id in node.child_nodes.iter_mut(){
@@ -428,6 +436,16 @@ fn main() {
             }
         }
     } else {
+        let num_t_str = matches_subc.value_of("threads").unwrap_or("10");
+        let num_t = match num_t_str.parse::<usize>() {
+            Ok(num_t) => num_t,
+            Err(_) => panic!("Number of threads must be positive integer"),
+        };
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(num_t)
+            .build_global()
+            .unwrap();
+
         let dont_output_stuff = matches_subc.is_present("dont_output_stuff");
         let short_reads = matches_subc.is_present("short_reads");
         let ref_graph_file = matches_subc.value_of("reference_graph").unwrap();
@@ -462,26 +480,9 @@ fn main() {
             *count_num += 1;
         }
 
-        //        let mut hash_vec: Vec<(&Kmer16, &usize)> = kmer_count_dict.iter().collect();
-        //        hash_vec.sort_by(|a, b| b.1.cmp(a.1));
-        //        let mut dont_use_kmers = FxHashSet::default();
-        //
-        //        for i in 0..hash_vec.len() / 1000 as usize {
-        //            dont_use_kmers.insert(hash_vec[i].0);
-        //        }
-        //        //        dont_use_kmers.insert(hash_vec[0].0);
-
         let reads_file = matches_subc.value_of("reads").unwrap();
 
         let reader = fastq::Reader::from_file(reads_file);
-        let mut reads = vec![];
-        for record in reader.unwrap().records() {
-            let rec = record.unwrap();
-            let read = DnaString::from_acgt_bytes(rec.seq());
-            let quals = rec.qual().to_vec();
-            let id = rec.id().to_string();
-            reads.push((read, id, quals));
-        }
 
         let ref_hash_map = chain::get_kmer_dict(&ref_graph);
         let mut anchor_file = BufWriter::new(File::create("read_anchor_hits.txt").unwrap());
@@ -493,155 +494,185 @@ fn main() {
         //        let simplified_graph = graph_utils::concat_graph(&ref_graph[0], &ref_graph);
         //        println!("Graph simp time {}", graph_simp_time.elapsed().as_secs_f32());
 
-        let mut successful_chains = vec![];
         let start_align = Instant::now();
+        let mut record_container = vec![];
+        let mut bam_info_container: Mutex<Vec<_>> = Mutex::new(vec![]);
+        let mut best_hit_for_read: Mutex<FxHashMap<_, _>> = Mutex::new(FxHashMap::default());
 
-        for (read, read_id, quals) in reads {
-            let mut best_colors_both_strands = vec![];
-            let mut best_anchors_both_strands = vec![];
-            let mut strand_anchor_vec = vec![];
-            println!("---------------Read: {}---------------", read_id);
-            let mut read_seeds;
-            let s2;
-            if use_minimizers {
-                s2 = seeding_methods_bit::minimizer_seeds(&read, w, k, 1, &FxHashSet::default());
-            } else {
-                s2 = seeding_methods_bit::open_sync_seeds(&read, k, t, 1, &FxHashSet::default());
+        let mut records = reader.unwrap().records().peekable();
+//        let batch = num_t * 200;
+        let batch = usize::MAX;
+        while let Some(Ok(record)) = records.next() {
+            if record_container.len() < batch {
+                record_container.push(record);
             }
+            if record_container.len() == batch || records.peek().is_none() {
+                (0..record_container.len())
+                    .collect::<Vec<usize>>()
+                    .into_par_iter()
+                    .for_each(|i| {
+                        let rec = &record_container[i];
+                        let read = DnaString::from_acgt_bytes(rec.seq());
+                        let quals = rec.qual().to_vec();
+                        let read_id = rec.id().to_string();
 
-            read_seeds = s2.0;
-            let qlen = read_seeds.len();
-            let q_hash_map = chain::get_kmer_dict(&read_seeds);
-            let now = Instant::now();
-            //            let (best_anchors, _aln_score, read_strand) = chain::chain_seeds(
-            let mut anc_score_strand_vec = chain::chain_seeds(
-                &mut ref_graph,
-                &mut read_seeds,
-                &ref_hash_map,
-                &q_hash_map,
-                h,
-                chain_heuristic,
-                true,
-                &dont_use_kmers,
-                //                &FxHashSet::default(),
-                circular,
-            );
-            println!("Chaining time: {}", now.elapsed().as_secs_f32());
-
-            if !dont_output_stuff {
-                for (best_anchors, _aln_score, read_strand) in anc_score_strand_vec.iter() {
-                    if !dont_output_stuff {
-                        write!(&mut anchor_file, "{}:", read_id).unwrap();
-                        for anchor in best_anchors.iter() {
-                            write!(&mut anchor_file, "{},", anchor.0).unwrap();
+                        let mut best_colors_both_strands = vec![];
+                        let mut best_anchors_both_strands = vec![];
+                        let mut strand_anchor_vec = vec![];
+                        println!("---------------Read: {}---------------", read_id);
+                        let mut read_seeds;
+                        let s2;
+                        if use_minimizers {
+                            s2 = seeding_methods_bit::minimizer_seeds(
+                                &read,
+                                w,
+                                k,
+                                1,
+                                &FxHashSet::default(),
+                            );
+                        } else {
+                            s2 = seeding_methods_bit::open_sync_seeds(
+                                &read,
+                                k,
+                                t,
+                                1,
+                                &FxHashSet::default(),
+                            );
                         }
-                        write!(&mut anchor_file, "\n").unwrap();
-                    }
 
-                    //Need to reverse the read strand so that it is "forward". Bad mutability
-                    //design pattern here will change TODO. This is needed in alignment for
-                    //retrieving positions and in graph construction too.
-                    if *read_strand == false {
-                        for node in read_seeds.iter_mut() {
-                            node.order = qlen as u32 - node.order - 1;
-                            //            for child_id in node.child_nodes.iter_mut(){
-                            //                *child_id = q_len as u32 - *child_id - 1;
-                            //            }
+                        read_seeds = s2.0;
+                        let qlen = read_seeds.len();
+                        let q_hash_map = chain::get_kmer_dict(&read_seeds);
+                        let now = Instant::now();
+                        //            let (best_anchors, _aln_score, read_strand) = chain::chain_seeds(
+                        let mut anc_score_strand_vec = chain::chain_seeds(
+                            &ref_graph,
+                            &mut read_seeds,
+                            &ref_hash_map,
+                            &q_hash_map,
+                            h,
+                            chain_heuristic,
+                            true,
+                            &dont_use_kmers,
+                            //                &FxHashSet::default(),
+                            circular,
+                        );
+                        println!("Chaining time: {}", now.elapsed().as_secs_f32());
+
+                        for (best_anchors, _aln_score, read_strand) in anc_score_strand_vec.iter() {
+                            //                            if !dont_output_stuff {
+                            //                                write!(&mut anchor_file, "{}:", read_id).unwrap();
+                            //                                for anchor in best_anchors.iter() {
+                            //                                    write!(&mut anchor_file, "{},", anchor.0).unwrap();
+                            //                                }
+                            //                                write!(&mut anchor_file, "\n").unwrap();
+                            //                            }
+
+                            //Need to reverse the read strand so that it is "forward". Bad mutability
+                            //design pattern here will change TODO. This is needed in alignment for
+                            //retrieving positions and in graph construction too.
+                            if *read_strand == false {
+                                for node in read_seeds.iter_mut() {
+                                    node.order = qlen as u32 - node.order - 1;
+                                    //            for child_id in node.child_nodes.iter_mut(){
+                                    //                *child_id = q_len as u32 - *child_id - 1;
+                                    //            }
+                                }
+                            }
+                            let now = Instant::now();
+
+                            let (best_colors, best_list_anchors) = chain::get_best_path_from_chain2(
+                                best_anchors,
+                                &ref_graph,
+                                &order_to_id,
+                                read_seeds.len() as u32,
+                            );
+
+                            println!("Path collection time: {}", now.elapsed().as_secs_f32());
+
+                            //TODO don't want to do clone every anchor list.
+                            for i in 0..best_colors.len() {
+                                best_colors_both_strands.push(best_colors[i]);
+                                best_anchors_both_strands.push(best_list_anchors[i].clone());
+                                strand_anchor_vec.push(*read_strand);
+                            }
                         }
-                    }
-                    let now = Instant::now();
 
-                    let (best_colors, best_list_anchors) = chain::get_best_path_from_chain2(
-                        best_anchors,
-                        &ref_graph,
-                        &order_to_id,
-                        read_seeds.len() as u32,
-                    );
+                        if align {
+                            if best_anchors_both_strands.len() == 0 {
+                                println!("No good alignment found");
+                            } else {
+                                use std::cmp::min;
+                                //Print best anchors
+                                let mut best_indices = best_anchors_both_strands
+                                    .iter()
+                                    .enumerate()
+                                    .collect::<Vec<(_, _)>>();
+                                best_indices
+                                    .sort_by(|(_, a), (_, b)| b.1.partial_cmp(&a.1).unwrap());
+                                let best_indices: Vec<usize> =
+                                    best_indices.iter().map(|(index, _)| *index).collect();
+                                let top_n = 5;
+                                //                                writeln!(&mut best_genomes_file, ">{}", &read_id).unwrap();
+                                for _i in 0..min(top_n, best_indices.len()) {
+                                    let mut locked = best_hit_for_read.lock().unwrap();
+                                    let ith_color = best_colors_both_strands[best_indices[_i]];
+                                    let ith_score = best_anchors_both_strands[best_indices[_i]].1;
+                                    let ith_ref_chroms = align::get_nonzero_bits(ith_color);
+                                    for bit in ith_ref_chroms {
+                                        //                                        writeln!(
+                                        //                                            &mut best_genomes_file,
+                                        //                                            "{}\t{}",
+                                        //                                            &chrom_names[chroms.len() - bit - 1],
+                                        //                                            ith_score
+                                        //                                        )
+                                        //                                        .unwrap();
+                                        let vec = locked.entry(read_id.clone()).or_insert(vec![]);
+                                        vec.push((ith_score, &chrom_names[chroms.len() - bit - 1]))
+                                    }
+                                }
 
-                    println!("Path collection time: {}", now.elapsed().as_secs_f32());
+                                let best_index = best_indices[0];
+                                let anchors = &best_anchors_both_strands[best_index].0;
+                                let color = &best_colors_both_strands[best_index];
+                                let read_strand = strand_anchor_vec[best_index];
 
-                    //TODO don't want to do clone every anchor list.
-                    for i in 0..best_colors.len() {
-                        best_colors_both_strands.push(best_colors[i]);
-                        best_anchors_both_strands.push(best_list_anchors[i].clone());
-                        strand_anchor_vec.push(*read_strand);
+                                let bam_info = align::align_from_chain(
+                                    anchors,
+                                    &chroms,
+                                    *color,
+                                    &ref_graph,
+                                    &read_seeds,
+                                    &read,
+                                    read_strand,
+                                    &quals,
+                                    &chrom_names,
+                                    &read_id,
+                                );
+                                let mut locked = bam_info_container.lock().unwrap();
+                                locked.push(bam_info);
+                            }
+                        }
+                    });
+                for bam_info in bam_info_container.into_inner().unwrap() {
+                    if !bam_info.is_none() {
+                        let bam_rec = align::get_bam_record(bam_info.unwrap(), &headerview);
+                        writer.write(&bam_rec).unwrap();
                     }
                 }
-            }
-
-            if align {
-                if best_anchors_both_strands.len() == 0{
-                    println!("No good alignment found");
-                    continue;
-                }
-                use std::cmp::min;
-                //Print best anchors
-                let mut best_indices = best_anchors_both_strands
-                    .iter()
-                    .enumerate()
-                    .collect::<Vec<(_,_)>>();
-                best_indices.sort_by(|(_, a), (_, b)| b.1.partial_cmp(&a.1).unwrap());
-                let best_indices : Vec<usize>= best_indices
-                    .iter()
-                    .map(|(index, _)| *index).collect();
-                let top_n = 5;
-                writeln!(&mut best_genomes_file, ">{}", &read_id).unwrap();
-                for _i in 0..min(top_n,best_indices.len()){
-                    let ith_color = best_colors_both_strands[best_indices[_i]];
-                    let ith_score = best_anchors_both_strands[best_indices[_i]].1;
-                    let ith_ref_chroms = align::get_nonzero_bits(ith_color);
-                    for bit in ith_ref_chroms{
-                        writeln!(&mut best_genomes_file, "{}\t{}", &chrom_names[chroms.len() - bit - 1], ith_score).unwrap();
-                    }
-                }
-
-                let best_index = best_indices[0];
-                let anchors = &best_anchors_both_strands[best_index].0;
-                let color = &best_colors_both_strands[best_index];
-                let read_strand = strand_anchor_vec[best_index];
-
-                align::align_from_chain(
-                    anchors,
-                    &chroms,
-                    *color,
-                    &ref_graph,
-                    &read_seeds,
-                    &read,
-                    read_strand,
-                    &quals,
-                    &chrom_names,
-                    &read_id,
-                    &headerview,
-                    &mut writer,
-                );
-            }
-
-            if deconvolve {
-                deconvolution::collect_good_chains(
-                    &mut successful_chains,
-                    &mut anc_score_strand_vec,
-                    short_reads,
-                    read_id.clone(),
-                );
+                record_container = vec![];
+                bam_info_container = Mutex::new(vec![]);
             }
         }
-
+        for (read_id, hits) in best_hit_for_read.into_inner().unwrap() {
+            writeln!(&mut best_genomes_file, ">{}", &read_id).unwrap();
+            for hit in hits {
+                writeln!(&mut best_genomes_file, "{}\t{}", hit.1, hit.0).unwrap();
+            }
+        }
         println!(
             "Alignment took {} seconds",
             start_align.elapsed().as_secs_f32()
         );
-
-        if deconvolve {
-            let sampled_count_graph =
-                deconvolution::subsampled_ref_graph(&ref_graph, samp_freq_decon, chroms.len());
-            deconvolution::solve_coeffs(
-                &successful_chains,
-                sampled_count_graph,
-                &ref_graph,
-                chrom_names.len(),
-                &chrom_names,
-                penalty,
-            );
-        }
     }
 }

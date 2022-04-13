@@ -124,7 +124,7 @@ fn beta(ref_order_dist: f64, query_order_dist: f64) -> f64 {
 }
 
 fn get_chains<'a>(
-    seeds_ref: &'a mut Vec<KmerNode>,
+    seeds_ref: &'a Vec<KmerNode>,
     seeds_q: &'a mut Vec<KmerNode>,
     h: usize,
     chain_heuristic: bool,
@@ -262,7 +262,7 @@ fn get_chains<'a>(
 }
 
 pub fn chain_seeds<'a>(
-    seeds_ref: &'a mut Vec<KmerNode>,
+    seeds_ref: &'a Vec<KmerNode>,
     seeds_q: &'a mut Vec<KmerNode>,
     ref_hash_map: &'a FxHashMap<Kmer16, Vec<u32>>,
     q_hash_map: &'a FxHashMap<Kmer16, Vec<u32>>,
@@ -627,6 +627,9 @@ pub fn get_best_path_from_chain2(
     let mut best_path_start_anchors = vec![];
     let best_path = best_paths.get(&last_node.id);
     if let None = best_path {
+        return (vec![], vec![]);
+    }
+    if best_path.unwrap().is_empty(){
         return (vec![], vec![]);
     }
     let best_path_score = best_path
