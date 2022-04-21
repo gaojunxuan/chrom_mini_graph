@@ -3,6 +3,7 @@ use smallvec::SmallVec;
 use serde::{Serialize, Deserialize};
 use block_aligner::cigar::*;
 
+//First is ref, second is query
 pub type Anchors = Vec<(u32, u32)>;
 pub type Color = u128;
 

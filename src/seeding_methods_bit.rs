@@ -1,4 +1,4 @@
-use crate::data_structs::{KmerNode,Color};
+use crate::data_structs::{Color, KmerNode};
 use debruijn::dna_string::*;
 use debruijn::kmer::Kmer10;
 use debruijn::kmer::Kmer12;
@@ -8,13 +8,28 @@ use debruijn::Mer;
 use debruijn::Vmer;
 use fnv::FnvHasher;
 use fxhash::hash;
-use fxhash::{FxHashSet, FxHashMap};
+use fxhash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use std::hash::{Hash as _Hash, Hasher as _Hasher};
 
-pub fn get_masked_kmers(s: &DnaString, w: usize, k: usize, fraction_mask_f64 : f64) -> FxHashSet<Kmer16>{
+pub fn get_masked_kmers(
+    s: &DnaString,
+    w: usize,
+    k: usize,
+    t: usize, 
+    fraction_mask_f64: f64,
+    use_minimizers: bool
+) -> FxHashSet<Kmer16> {
     //Get the discarded k-mers here and don't use these k-mers when seeding
-    let (seeds1,_p1) = minimizer_seeds(s, w, k, 100, &FxHashSet::default());
+    let seeds1;
+    if use_minimizers{
+        let (seeds, _p1) = minimizer_seeds(s, w, k, 100, &FxHashSet::default());
+        seeds1 = seeds;
+    }
+    else{
+        let (seeds, _p1) = open_sync_seeds(s, k, t, 100, &FxHashSet::default());
+        seeds1 = seeds;
+    }
     let mut kmer_count_dict = FxHashMap::default();
     for node in seeds1.into_iter() {
         let count_num = kmer_count_dict.entry(node.kmer).or_insert(0);
@@ -45,7 +60,7 @@ pub fn minimizer_seeds(
     samp_freq: usize,
     dont_use_kmers: &FxHashSet<Kmer16>,
 ) -> (Vec<KmerNode>, Vec<u32>) {
-    let use_fnv = true;
+    let use_fnv = false;
     let mut minimizer_seeds: Vec<KmerNode> = vec![];
     let mut positions_selected: Vec<u32> = Vec::new();
 
@@ -112,7 +127,16 @@ pub fn minimizer_seeds(
             node_kmer = kmer;
         }
 
-        if !dont_use_kmers.contains(&node_kmer) {
+        let mut distance_from_last = 0;
+        let mut ignore_mask = false;
+        if !positions_selected.last().is_none() {
+            distance_from_last = (i - offset) as u32 - *positions_selected.last().unwrap() as u32;
+        }
+        if distance_from_last > 250 {
+            ignore_mask = true;
+            //            dbg!(distance_from_last);
+        }
+        if !dont_use_kmers.contains(&node_kmer) || ignore_mask {
             positions_selected.push((i - offset) as u32);
             let mut kmer_node = KmerNode {
                 kmer: node_kmer,
@@ -159,6 +183,10 @@ pub fn minimizer_seeds(
         }
     }
 
+    //TODO
+    //    if positions_selected.len() < 10000{
+    //        dbg!(&positions_selected);
+    //    }
     return (minimizer_seeds, positions_selected);
 }
 
@@ -217,7 +245,18 @@ pub fn open_sync_seeds(
                     node_kmer = kmer;
                 }
 
-                if !dont_use_kmers.contains(&node_kmer) {
+                let mut ignore_mask = false;
+                let mut distance_from_last = 0;
+                if !positions_selected.last().is_none() {
+                    distance_from_last =
+                        (i + 1 - w) as u32 - *positions_selected.last().unwrap() as u32;
+                }
+                if distance_from_last > 250 {
+                    ignore_mask = true;
+                    //            dbg!(distance_from_last);
+                }
+
+                if !dont_use_kmers.contains(&node_kmer) || ignore_mask{
                     positions_selected.push((i + 1 - w) as u32);
                     let mut kmer_node = KmerNode {
                         kmer: node_kmer,

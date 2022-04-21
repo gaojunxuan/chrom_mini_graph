@@ -305,10 +305,7 @@ pub fn write_bam_header(
     return (HeaderView::from_header(&header), writer);
 }
 
-pub fn get_bam_record(
-    bam_info: BamInfo,
-    headerview: &HeaderView,
-) -> Record {
+pub fn get_bam_record(bam_info: BamInfo, headerview: &HeaderView) -> Record {
     let mut rec = Record::new();
     let cigar_vec = &bam_info.cigar;
     let mut hts_cigar_vec = vec![];
@@ -364,8 +361,8 @@ pub fn align_from_chain(
     quals: &[u8],
     chrom_names: &Vec<String>,
     read_id: &String,
-//    headerview: &HeaderView,
-//    writer: &mut Writer,
+    //    headerview: &HeaderView,
+    //    writer: &mut Writer,
 ) -> Option<BamInfo> {
     println!("Aligning to genome corresponding to colour {}", color);
     if anchors.len() < 5 {
@@ -467,17 +464,24 @@ pub fn align_from_chain(
         start_pos_chrom = a;
     }
     let read_map_string;
+    let read_map_string_slice;
     let qual_map_string;
     if read_strand {
         read_map_string = read
             .slice(kmer_hit_coords[0].1, kmer_hit_coords.last().unwrap().1 + 16)
             .to_string();
+        read_map_string_slice = read
+            .slice(kmer_hit_coords[0].1, kmer_hit_coords.last().unwrap().1 + 16);
         qual_map_string = &quals[kmer_hit_coords[0].1..kmer_hit_coords.last().unwrap().1 + 16];
     } else {
+        //Need to reverse the quals TODO
         read_map_string = read
             .slice(kmer_hit_coords.last().unwrap().1, kmer_hit_coords[0].1 + 16)
             .rc()
             .to_string();
+        read_map_string_slice = read
+            .slice(kmer_hit_coords.last().unwrap().1, kmer_hit_coords[0].1 + 16)
+            .rc();
         qual_map_string = &quals[kmer_hit_coords.last().unwrap().1..kmer_hit_coords[0].1 + 16];
     }
 
@@ -487,38 +491,53 @@ pub fn align_from_chain(
     if block_align {
         let now = Instant::now();
         let block_size = 64;
+        let r_cpy = ref_map_string.clone();
+        let q_cpy = read_map_string.clone();
+
         let r = PaddedBytes::from_string::<NucMatrix>(ref_map_string, block_size);
         let q = PaddedBytes::from_string::<NucMatrix>(read_map_string.clone(), block_size);
         let gaps = Gaps {
-            open: -4,
-            extend: -2,
+            open: -2,
+            extend: -1,
         };
 
-        let nuc_mat: NucMatrix = NucMatrix::new_simple(2, -4);
+        let nuc_mat: NucMatrix = NucMatrix::new_simple(1, -1);
         let a = Block::<_, true, false>::align(&q, &r, &nuc_mat, gaps, block_size..=block_size, 50);
 
         let res = a.res();
         let cigar = a.trace().cigar(res.query_idx, res.reference_idx);
-        println!("Aligning time: {}", now.elapsed().as_secs_f32());
+//        let fmt_string = cigar.format(&q_cpy.as_bytes(), &r_cpy.as_bytes());
+//        println!("{}\n{}", fmt_string.0, fmt_string.1);
+//        println!("Aligning time: {}", now.elapsed().as_secs_f32());
         println!("Alignment score: {}", res.score);
         let ref_chrom_name = &chrom_names[chroms.len() - align::get_first_nonzero_bit(color) - 1];
+        let seq;
+        let cigar_vec: Vec<OpLen>;
+        if *strand_chrom{
+            seq = read_map_string;
+            cigar_vec = cigar.to_vec();
+        }
+        else{
+            seq = read_map_string_slice.rc().to_string();
+            cigar_vec = cigar.to_vec().into_iter().rev().collect();
+        }
         let bam_info = BamInfo {
-            cigar: cigar.to_vec(),
-            sequence: read_map_string,
+            cigar: cigar_vec,
+            sequence: seq,
             quals: qual_map_string.to_owned(),
             qname: read_id.clone(),
             strand: read_strand,
             ref_name: ref_chrom_name.clone(),
             map_pos: start_pos_chrom,
-            mapq: 60
+            mapq: 60,
         };
         return Some(bam_info);
-//        let bam_rec = align::get_bam_record(
-//            bam_info,
-//            &headerview,
-//        );
-//
-//        writer.write(&bam_rec).unwrap();
+    //        let bam_rec = align::get_bam_record(
+    //            bam_info,
+    //            &headerview,
+    //        );
+    //
+    //        writer.write(&bam_rec).unwrap();
     } else {
         //Testing out WFA alignment. Seems to be worse than blockaligner.
         use libwfa::{affine_wavefront::*, bindings::*, mm_allocator::*, penalties::*};
@@ -617,7 +636,7 @@ pub fn align_from_chain(
             strand: read_strand,
             ref_name: ref_chrom_name.clone(),
             map_pos: start_pos_chrom,
-            mapq: 60
+            mapq: 60,
         };
         return Some(bam_info);
     }
