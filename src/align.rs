@@ -38,20 +38,7 @@ pub fn get_nonzero_bits(n: Color) -> Vec<usize> {
 
 #[inline]
 pub fn get_first_nonzero_bit(n: Color) -> usize {
-    let mut temp = n;
-    let mut bit_pos = 0;
-
-    assert!(n != 0);
-    loop {
-        if temp % 2 == 0 {
-            temp /= 2;
-            bit_pos += 1
-        } else {
-            break;
-        }
-    }
-
-    bit_pos
+    return n.trailing_zeros() as usize;
 }
 
 pub fn get_coords(
@@ -364,9 +351,9 @@ pub fn align_from_chain(
     //    headerview: &HeaderView,
     //    writer: &mut Writer,
 ) -> Option<BamInfo> {
-    println!("Aligning to genome corresponding to colour {}", color);
-    if anchors.len() < 5 {
-        println!("Less than 5 anchors, bad align");
+    println!("Aligning to genome corresponding to colour {} (or {})", color.trailing_zeros(), chrom_names[(chroms.len() as u32 - color.trailing_zeros() - 1) as usize]);
+    if anchors.len() < 3 {
+        println!("Less than 3 anchors, bad align");
         println!("Alignment score: NA");
         return None;
     }
@@ -376,9 +363,8 @@ pub fn align_from_chain(
     let now = Instant::now();
     let (_ref_coords, kmer_hit_coords) =
         align::get_coords(&anchors, &ref_graph, &read_seeds, color, &chroms);
-    println!("Get interval align time: {}", now.elapsed().as_secs_f32());
-    if kmer_hit_coords.len() < 5 {
-        println!("Less than 5 kmer hits, bad align");
+    if kmer_hit_coords.len() < 3 {
+        println!("Less than 3 kmer hits, bad align");
         println!("Alignment score: NA");
         return None;
     }
@@ -490,7 +476,8 @@ pub fn align_from_chain(
     //ALIGNMENT
     if block_align {
         let now = Instant::now();
-        let block_size = 64;
+        let block_size = 512;
+//        let block_size = 64;
         let r_cpy = ref_map_string.clone();
         let q_cpy = read_map_string.clone();
 
@@ -501,7 +488,7 @@ pub fn align_from_chain(
             extend: -1,
         };
 
-        let nuc_mat: NucMatrix = NucMatrix::new_simple(1, -1);
+        let nuc_mat: NucMatrix = NucMatrix::new_simple(1, -2);
         let a = Block::<_, true, false>::align(&q, &r, &nuc_mat, gaps, block_size..=block_size, 50);
 
         let res = a.res();
@@ -521,6 +508,22 @@ pub fn align_from_chain(
             seq = read_map_string_slice.rc().to_string();
             cigar_vec = cigar.to_vec().into_iter().rev().collect();
         }
+        let mapq_score = res.score as f64 / (q.len() + (read.len() - q.len()) * 2) as f64;
+        let mapq;
+        if mapq_score < 0.{
+            mapq = 0;
+        }
+        else{
+            let mapq_temp = mapq_score.ln() * 40. + 65.;
+            if mapq_temp < 0.{
+                mapq = 0;
+            }
+            else{
+                mapq = mapq_temp as i32;
+            }
+        }
+        let mapq = u8::min(mapq as u8, 60);
+
         let bam_info = BamInfo {
             cigar: cigar_vec,
             sequence: seq,
@@ -529,8 +532,10 @@ pub fn align_from_chain(
             strand: read_strand,
             ref_name: ref_chrom_name.clone(),
             map_pos: start_pos_chrom,
-            mapq: 60,
+            mapq: mapq,
         };
+
+        println!("Read align time: {}", now.elapsed().as_secs_f32());
         return Some(bam_info);
     //        let bam_rec = align::get_bam_record(
     //            bam_info,
@@ -638,6 +643,9 @@ pub fn align_from_chain(
             map_pos: start_pos_chrom,
             mapq: 60,
         };
+
+        println!("Read align time: {}", now.elapsed().as_secs_f32());
         return Some(bam_info);
     }
+
 }

@@ -4,6 +4,8 @@ use block_aligner::scan_block::*;
 use block_aligner::scores::*;
 use chrom_mini_graph::align;
 use chrom_mini_graph::chain;
+use chrom_mini_graph::constants;
+use chrom_mini_graph::coord_chain;
 use chrom_mini_graph::data_structs::KmerNode;
 use chrom_mini_graph::deconvolution;
 use chrom_mini_graph::graph_utils;
@@ -58,13 +60,25 @@ fn main() {
                 arg(
                     Arg::with_name("mask")
                         .short("m")
-                        .help("Mask fraction of k-mers (Default: top 0.05% of repetitive k-mers)")
+                        .help("Mask fraction of k-mers (Default: top 0.0002 of repetitive k-mers)")
                         .takes_value(true)
                 ).
                 arg(
                     Arg::with_name("samp_freq")
                         .short("f")
-                        .help("Graph sampling frequency for k-mer positions. (Default: 100)")
+                        .help("Graph sampling frequency for strain detect. (Default: 30)")
+                        .takes_value(true)
+                ).
+                arg(
+                    Arg::with_name("minimizer_weighting")
+                        .short("r")
+                        .help("marbl minimizer weighting file for k = 16. (Default: none)")
+                        .takes_value(true)
+                ).
+                arg(
+                    Arg::with_name("w")
+                        .short("w")
+                        .help("w value (testing).")
                         .takes_value(true)
                         .hidden(true)
                 )
@@ -137,9 +151,28 @@ fn main() {
                         .hidden(true)
                 ).
                 arg(
-                    Arg::with_name("samp_freq_decon")
+                    Arg::with_name("samp_freq")
                         .short("f")
                         .help("Graph sampling frequency for strain detect. (Default: 30)")
+                        .takes_value(true)
+                ).
+                arg(
+                    Arg::with_name("minimizer_weighting")
+                        .short("r")
+                        .help("marbl minimizer weighting file for k = 16. (Default: none)")
+                        .takes_value(true)
+                ).
+                arg(
+                    Arg::with_name("h")
+                        .short("h")
+                        .help("h value (testing).")
+                        .takes_value(true)
+                        .hidden(true)
+                ).
+                arg(
+                    Arg::with_name("w")
+                        .short("w")
+                        .help("w value (testing).")
                         .takes_value(true)
                         .hidden(true)
                 )
@@ -169,20 +202,16 @@ fn main() {
     } else {
         align = false;
     }
-    let deconvolve;
-    if matches_subc.is_present("deconvolve") {
-        deconvolve = true;
-    } else {
-        deconvolve = false;
-    }
 
-    let w = 16;
     let k = 16;
-    let mask_repet_on_generate = true;
-    let s = 10;
+    let s = 8;
     let t = (k - s + 2) / 2 as usize;
-    let h = 50;
-    let samp_freq = 30;
+    //    let samp_freq = 30;
+    let samp_freq = matches_subc
+        .value_of("samp_freq")
+        .unwrap_or("30")
+        .parse::<usize>()
+        .unwrap();
     //use syncmers if not using minimizers
 
     let use_minimizers;
@@ -197,6 +226,24 @@ fn main() {
         chain_heuristic = false;
     } else {
         chain_heuristic = true;
+    }
+    let h = matches_subc
+        .value_of("h")
+        .unwrap_or("50")
+        .parse::<usize>()
+        .unwrap();
+    let w = matches_subc
+        .value_of("w")
+        .unwrap_or("16")
+        .parse::<usize>()
+        .unwrap();
+
+    let minimizer_weight_file = matches_subc.value_of("minimizer_weighting");
+    let frequent_kmers;
+    if let Some(file_str) = minimizer_weight_file {
+        frequent_kmers = seeding_methods_bit::read_minimizer_count_file(file_str);
+    } else {
+        frequent_kmers = FxHashMap::default();
     }
 
     if generate {
@@ -236,8 +283,16 @@ fn main() {
 
         let mut seeds1;
         let seed_p1;
-        let dont_use_kmers =
-            seeding_methods_bit::get_masked_kmers(&chroms[0].0, w, k, t, fraction_mask_f64, use_minimizers);
+        let dont_use_kmers = seeding_methods_bit::get_masked_kmers(
+            &chroms[0].0,
+            w,
+            k,
+            s,
+            t,
+            fraction_mask_f64,
+            use_minimizers,
+            &frequent_kmers,
+        );
         if use_minimizers {
             seed_p1 = seeding_methods_bit::minimizer_seeds(
                 &chroms[0].0,
@@ -245,14 +300,19 @@ fn main() {
                 k,
                 samp_freq,
                 &dont_use_kmers,
+                &frequent_kmers,
+                true,
             );
         } else {
             seed_p1 = seeding_methods_bit::open_sync_seeds(
                 &chroms[0].0,
                 k,
                 t,
+                s,
                 samp_freq,
                 &dont_use_kmers,
+                &frequent_kmers,
+                true,
             );
         }
         seeds1 = seed_p1.0;
@@ -266,6 +326,7 @@ fn main() {
 
         let mut aln_score_array = vec![];
         let mut mean_score = 0.0;
+        graph_utils::top_sort(&mut seeds1);
 
         for i in 1..chroms.len() {
             let old_graph_len = seeds1.len();
@@ -276,9 +337,26 @@ fn main() {
             let now = Instant::now();
             let s2;
             if use_minimizers {
-                s2 = seeding_methods_bit::minimizer_seeds(genome_string, w, k, 1, &dont_use_kmers);
+                s2 = seeding_methods_bit::minimizer_seeds(
+                    genome_string,
+                    w,
+                    k,
+                    1,
+                    &dont_use_kmers,
+                    &frequent_kmers,
+                    false,
+                );
             } else {
-                s2 = seeding_methods_bit::open_sync_seeds(genome_string, k, t, 1, &dont_use_kmers);
+                s2 = seeding_methods_bit::open_sync_seeds(
+                    genome_string,
+                    k,
+                    t,
+                    s,
+                    1,
+                    &dont_use_kmers,
+                    &frequent_kmers,
+                    false,
+                );
             }
             seeds2 = s2.0;
             println!(
@@ -321,6 +399,7 @@ fn main() {
             //Only need this for circula because circular does chaining for both strands,
             //hence mutates the state back to normal. Needs to be reversed if
             //reverse is the best strand. Non-circular already reverses during the chaining.
+            let order_val_last = seeds2[qlen - 1].order_val;
             if forward_strand == false && circular {
                 for node in seeds2.iter_mut() {
                     node.order = qlen as u32 - node.order - 1;
@@ -457,17 +536,6 @@ fn main() {
         let short_reads = matches_subc.is_present("short_reads");
         let ref_graph_file = matches_subc.value_of("reference_graph").unwrap();
         let bam_name = matches_subc.value_of("bam_name").unwrap_or("output.bam");
-        let penalty: f64 = matches_subc
-            .value_of("penalty")
-            .unwrap_or("0.1")
-            .parse()
-            .unwrap();
-
-        let samp_freq_decon: usize = matches_subc
-            .value_of("samp_freq_decon")
-            .unwrap_or("30")
-            .parse()
-            .unwrap();
 
         let ref_graph_f = File::open(ref_graph_file).unwrap();
         let ref_graph_reader = BufReader::new(ref_graph_f);
@@ -479,7 +547,6 @@ fn main() {
             FxHashSet<Kmer16>,
         ) = bincode::deserialize_from(ref_graph_reader).unwrap();
 
-        let closest_kmer_vec = graph_utils::get_closest_node(&ref_graph);
         let order_to_id = graph_utils::top_sort(&mut ref_graph);
         let reads_file = matches_subc.value_of("reads").unwrap();
         let reader = fastq::Reader::from_file(reads_file);
@@ -502,6 +569,7 @@ fn main() {
         let mut records = reader.unwrap().records().peekable();
         //        let batch = num_t * 200;
         let batch = usize::MAX;
+        let time_stuff = true;
         while let Some(Ok(record)) = records.next() {
             if record_container.len() < batch {
                 record_container.push(record);
@@ -511,6 +579,8 @@ fn main() {
                     .collect::<Vec<usize>>()
                     .into_par_iter()
                     .for_each(|i| {
+                        let now = Instant::now();
+                        let total_time = Instant::now();
                         let rec = &record_container[i];
                         let read = DnaString::from_acgt_bytes(rec.seq());
                         let quals = rec.qual().to_vec();
@@ -518,8 +588,15 @@ fn main() {
 
                         let mut best_colors_both_strands = vec![];
                         let mut best_anchors_both_strands = vec![];
+                        let mut chain_numbers = vec![];
                         let mut strand_anchor_vec = vec![];
+
+                        if time_stuff {
+                            println!("Preprocess time: {}", now.elapsed().as_secs_f32());
+                        }
+
                         println!("---------------Read: {}---------------", read_id);
+                        let now = Instant::now();
                         let mut read_seeds;
                         let s2;
                         if use_minimizers {
@@ -529,37 +606,28 @@ fn main() {
                                 k,
                                 1,
                                 &FxHashSet::default(),
+                                &frequent_kmers,
+                                false,
                             );
                         } else {
                             s2 = seeding_methods_bit::open_sync_seeds(
                                 &read,
                                 k,
                                 t,
+                                s,
                                 1,
                                 &FxHashSet::default(),
+                                &frequent_kmers,
+                                false,
                             );
+                        }
+                        if time_stuff {
+                            println!("Seeding time: {}", now.elapsed().as_secs_f32());
                         }
 
                         read_seeds = s2.0;
                         let qlen = read_seeds.len();
                         let q_hash_map = chain::get_kmer_dict(&read_seeds);
-                        let now = Instant::now();
-                        //            let (best_anchors, _aln_score, read_strand) = chain::chain_seeds(
-                        //
-                        chain::get_super_chains(
-                            &ref_graph,
-                            &read_seeds,
-                            &ref_hash_map,
-                            &q_hash_map,
-                            h,
-                            chain_heuristic,
-//                            &dont_use_kmers,
-                                            &FxHashSet::default(),
-                            &closest_kmer_vec,
-                            samp_freq,
-                            read.len()
-                        );
-                        println!("Super chaining time: {}", now.elapsed().as_secs_f32());
                         let now = Instant::now();
                         let mut anc_score_strand_vec = chain::chain_seeds(
                             &ref_graph,
@@ -569,26 +637,18 @@ fn main() {
                             h,
                             chain_heuristic,
                             true,
-//                            &dont_use_kmers,
-                                            &FxHashSet::default(),
+                            //                            &dont_use_kmers,
+                            &FxHashSet::default(),
                             circular,
                         );
-                        
-                        println!("Chaining time: {}", now.elapsed().as_secs_f32());
-//                        panic!();
 
-                        for (best_anchors, _aln_score, read_strand) in anc_score_strand_vec.iter() {
-                            //                            if !dont_output_stuff {
-                            //                                write!(&mut anchor_file, "{}:", read_id).unwrap();
-                            //                                for anchor in best_anchors.iter() {
-                            //                                    write!(&mut anchor_file, "{},", anchor.0).unwrap();
-                            //                                }
-                            //                                write!(&mut anchor_file, "\n").unwrap();
-                            //                            }
+                        if time_stuff {
+                            println!("Chaining time: {}", now.elapsed().as_secs_f32());
+                        }
 
-                            //Need to reverse the read strand so that it is "forward". Bad mutability
-                            //design pattern here will change TODO. This is needed in alignment for
-                            //retrieving positions and in graph construction too.
+                        for (k, (best_anchors, _aln_score, read_strand)) in
+                            anc_score_strand_vec.iter().enumerate()
+                        {
                             if *read_strand == false {
                                 for node in read_seeds.iter_mut() {
                                     node.order = qlen as u32 - node.order - 1;
@@ -604,22 +664,103 @@ fn main() {
                                 &ref_graph,
                                 &order_to_id,
                                 &read_seeds,
+                                read.len(),
+                                false,
                             );
 
-                            println!("Path collection time: {}", now.elapsed().as_secs_f32());
+                            if time_stuff {
+                                println!("Path collection time: {}", now.elapsed().as_secs_f32());
+                            }
 
                             //TODO don't want to do clone every anchor list.
                             for i in 0..best_colors.len() {
                                 best_colors_both_strands.push(best_colors[i]);
                                 best_anchors_both_strands.push(best_list_anchors[i].clone());
                                 strand_anchor_vec.push(*read_strand);
+                                chain_numbers.push(k);
                             }
                         }
 
                         if align {
+                            let mut do_align = true;
+                            let do_base_chain = true;
                             if best_anchors_both_strands.len() == 0 {
-                                println!("No good alignment found");
-                            } else {
+                                if read.len() > constants::READ_LENGTH_SUPER_CHAIN_CUTOFF
+                                    && do_base_chain
+                                {
+                                    println!("No good alignment found; primary-ref-chaining");
+                                    let now = Instant::now();
+                                    //Do base chaining if no good alignment is found
+                                    let mut base_anc_score_strand_vec =
+                                        coord_chain::get_base_chains(
+                                            &ref_graph,
+                                            &read_seeds,
+                                            &ref_hash_map,
+                                            &q_hash_map,
+                                            h,
+                                            &FxHashSet::default(),
+                                            read.len(),
+                                        );
+
+                                    if time_stuff {
+                                        println!(
+                                            "primary-ref chaining time: {}",
+                                            now.elapsed().as_secs_f32()
+                                        );
+                                    }
+
+                                    for (k, (best_anchors, _aln_score, read_strand)) in
+                                        base_anc_score_strand_vec.iter().enumerate()
+                                    {
+                                        if *read_strand == false {
+                                            for node in read_seeds.iter_mut() {
+                                                node.order = qlen as u32 - node.order - 1;
+                                                //            for child_id in node.child_nodes.iter_mut(){
+                                                //                *child_id = q_len as u32 - *child_id - 1;
+                                                //            }
+                                            }
+                                        }
+                                        let now = Instant::now();
+
+                                        let (best_colors, best_list_anchors) =
+                                            chain::get_best_path_from_chain2(
+                                                best_anchors,
+                                                &ref_graph,
+                                                &order_to_id,
+                                                &read_seeds,
+                                                read.len(),
+                                                true,
+                                            );
+
+                                        if time_stuff {
+                                            println!(
+                                                "Path collection time: {}",
+                                                now.elapsed().as_secs_f32()
+                                            );
+                                        }
+
+                                        //TODO don't want to do clone every anchor list.
+                                        for i in 0..best_colors.len() {
+                                            best_colors_both_strands.push(best_colors[i]);
+                                            best_anchors_both_strands
+                                                .push(best_list_anchors[i].clone());
+                                            chain_numbers.push(k);
+                                            strand_anchor_vec.push(*read_strand);
+                                        }
+
+                                        if best_anchors_both_strands.len() > 0 {
+                                            do_align = true;
+                                        } else {
+                                            do_align = false;
+                                        }
+                                    }
+                                } else {
+                                    println!("No good alignment found");
+                                    do_align = false;
+                                }
+                            }
+                            if do_align {
+                                let now = Instant::now();
                                 use std::cmp::min;
                                 //Print best anchors
                                 let mut best_indices = best_anchors_both_strands
@@ -630,7 +771,7 @@ fn main() {
                                     .sort_by(|(_, a), (_, b)| b.1.partial_cmp(&a.1).unwrap());
                                 let best_indices: Vec<usize> =
                                     best_indices.iter().map(|(index, _)| *index).collect();
-                                let top_n = 5;
+                                let top_n = 10;
                                 //                                writeln!(&mut best_genomes_file, ">{}", &read_id).unwrap();
                                 for _i in 0..min(top_n, best_indices.len()) {
                                     let mut locked = best_hit_for_read.lock().unwrap();
@@ -649,36 +790,64 @@ fn main() {
                                         vec.push((ith_score, &chrom_names[chroms.len() - bit - 1]))
                                     }
                                 }
+                                if time_stuff {
+                                    println!(
+                                        "Align preprocess time {}",
+                                        now.elapsed().as_secs_f32()
+                                    );
+                                }
 
                                 let map_indices;
-                                let map_all = false;
+                                let map_all = true;
                                 if map_all {
                                     map_indices = top_n;
                                 } else {
                                     map_indices = 1;
                                 }
+
+                                let now = Instant::now();
+                                let mut used_chains = FxHashSet::default();
                                 for index in 0..usize::min(best_indices.len(), map_indices) {
                                     let best_index = best_indices[index];
-                                    let anchors = &best_anchors_both_strands[best_index].0;
-                                    let color = &best_colors_both_strands[best_index];
-                                    let read_strand = strand_anchor_vec[best_index];
+                                    let best_score = best_anchors_both_strands[best_indices[0]].1;
+                                    let score = best_anchors_both_strands[best_index].1;
+                                    let chain_number = chain_numbers[best_index];
+                                    if (best_score < score + 50.
+                                        || (best_score - score) < 0.05 * (best_score + 1000.))
+                                        && !used_chains.contains(&chain_number)
+                                    {
+                                        used_chains.insert(chain_number);
+                                        let anchors = &best_anchors_both_strands[best_index].0;
+                                        let color = &best_colors_both_strands[best_index];
+                                        let read_strand = strand_anchor_vec[best_index];
 
-                                    let bam_info = align::align_from_chain(
-                                        anchors,
-                                        &chroms,
-                                        *color,
-                                        &ref_graph,
-                                        &read_seeds,
-                                        &read,
-                                        read_strand,
-                                        &quals,
-                                        &chrom_names,
-                                        &read_id,
-                                    );
-                                    let mut locked = bam_info_container.lock().unwrap();
-                                    locked.push(bam_info);
+                                        let bam_info = align::align_from_chain(
+                                            anchors,
+                                            &chroms,
+                                            *color,
+                                            &ref_graph,
+                                            &read_seeds,
+                                            &read,
+                                            read_strand,
+                                            &quals,
+                                            &chrom_names,
+                                            &read_id,
+                                        );
+                                        let mut locked = bam_info_container.lock().unwrap();
+                                        locked.push(bam_info);
+                                    }
+                                }
+                                if time_stuff {
+                                    println!("Total align time {}", now.elapsed().as_secs_f32());
                                 }
                             }
+                        }
+                        if time_stuff {
+                            println!(
+                                "Total time mapping read {} is {}",
+                                read_id,
+                                total_time.elapsed().as_secs_f32()
+                            );
                         }
                     });
                 for bam_info in bam_info_container.into_inner().unwrap() {

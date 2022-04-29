@@ -161,6 +161,7 @@ pub fn top_sort(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
             }
         }
         if no_further {
+            let mut last_popped_node = None;
             loop {
                 //last node
                 if nodes_to_visit.len() == 0 {
@@ -168,7 +169,32 @@ pub fn top_sort(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
                         let sorted_node = stack_of_visited.pop().unwrap();
                         if !already_seen.contains(&sorted_node) {
                             already_seen.insert(sorted_node);
-                            rev_sort_list.push(sorted_node);
+                            if let Some(last_node) = last_popped_node {
+                                let mut dist_to_last = 0;
+                                let mut num_edges = 0;
+                                for (dist, (_color, index)) in
+                                    ref_nodes[sorted_node as usize].child_edge_distance.iter()
+                                {
+                                    if ref_nodes[ref_nodes[sorted_node as usize].child_nodes
+                                        [*index as usize]
+                                        as usize]
+                                        .id
+                                        == last_node
+                                    {
+                                        num_edges += 1;
+                                        dist_to_last += dist;
+                                    }
+                                }
+                                if num_edges > 0 {
+                                    dist_to_last /= num_edges;
+                                    rev_sort_list.push((sorted_node, Some(dist_to_last)));
+                                } else {
+                                    rev_sort_list.push((sorted_node, None));
+                                }
+                            } else {
+                                rev_sort_list.push((sorted_node, None));
+                            }
+                            last_popped_node = Some(sorted_node);
                         }
                     }
                     break;
@@ -179,16 +205,47 @@ pub fn top_sort(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
                 }
                 let sorted_node = stack_of_visited.pop().unwrap();
                 if !already_seen.contains(&sorted_node) {
-                    rev_sort_list.push(sorted_node);
                     already_seen.insert(sorted_node);
+                    if let Some(last_node) = last_popped_node {
+                        let mut dist_to_last = 0;
+                        let mut num_edges = 0;
+                        for (dist, (_color, index)) in
+                            ref_nodes[sorted_node as usize].child_edge_distance.iter()
+                        {
+                            if ref_nodes[ref_nodes[sorted_node as usize].child_nodes
+                                [*index as usize] as usize]
+                                .id
+                                == last_node
+                            {
+                                num_edges += 1;
+                                dist_to_last += dist;
+                            }
+                        }
+                        if num_edges > 0 {
+                            dist_to_last /= num_edges;
+                            rev_sort_list.push((sorted_node, Some(dist_to_last)));
+                        } else {
+                            rev_sort_list.push((sorted_node, None));
+                        }
+                    } else {
+                        rev_sort_list.push((sorted_node, None));
+                    }
+                    last_popped_node = Some(sorted_node);
                 }
             }
         }
     }
 
-    for (i, id) in rev_sort_list.iter().rev().enumerate() {
+    let mut running_dist_opt = 0 as u32;
+    for (i, (id, dist_opt)) in rev_sort_list.iter().rev().enumerate() {
         ref_nodes[(*id) as usize].order = i as u32;
+        ref_nodes[(*id) as usize].order_val = running_dist_opt as u32;
         order_to_id.push(*id);
+        if let Some(dist) = dist_opt {
+            running_dist_opt += *dist as u32;
+        } else {
+            running_dist_opt += 1 as u32;
+        }
     }
 
     return order_to_id;
@@ -364,6 +421,7 @@ pub fn add_align_to_graph(
                 let mut new_kmer_node = KmerNode {
                     id: new_id as u32,
                     order: kmer1rorder,
+                    order_val: 0,
                     kmer: strand_aln_nodes[i as usize].kmer,
                     child_nodes: SmallVec::<[u32; 1]>::new(),
                     child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
@@ -375,13 +433,9 @@ pub fn add_align_to_graph(
                     //00 1
                     canonical: strand_aln_nodes[i as usize].canonical == forward_strand,
                     actual_ref_positions: SmallVec::<[usize; 0]>::new(),
+                    repetitive: strand_aln_nodes[i as usize].repetitive,
+                    primary_base: None
                 };
-
-                if i as usize % samp_freq == 0 {
-                    new_kmer_node
-                        .actual_ref_positions
-                        .push(strand_aln_nodes[i as usize].actual_ref_positions[0]);
-                }
 
                 let genome_dist_query;
                 if forward_strand {
@@ -394,6 +448,12 @@ pub fn add_align_to_graph(
                     }
                 } else {
                     genome_dist_query = strand_aln_nodes[i as usize].child_edge_distance[0];
+                }
+
+                if i as usize % samp_freq == 0 || strand_aln_nodes[i as usize].repetitive {
+                    new_kmer_node
+                        .actual_ref_positions
+                        .push(strand_aln_nodes[i as usize].actual_ref_positions[0]);
                 }
                 parent_node.child_nodes.push(new_id as u32);
                 parent_node.child_edge_distance.push((
@@ -435,108 +495,12 @@ pub fn add_align_to_graph(
     }
 }
 
-//pub fn get_closest_node(ref_nodes: &Vec<KmerNode>, samp_freq: usize) -> Vec<Option<u32>> {
-//    let mut closest_nodes = vec![None; ref_nodes.len()];
-//    let mut node_distances = vec![vec![]; ref_nodes.len()];
-//    for i in 0..ref_nodes.len() {
-//        if ref_nodes[i].actual_ref_positions.is_empty() {
-//            continue;
-//        }
-//
-//        let mut curr_visited_nodes = FxHashMap::default();
-//        let mut parent_node = &ref_nodes[i];
-//        let mut nodes_to_search = Vec::new();
-//        let mut dist_from_coord_node = 0;
-//        let mut search_stack = vec![i as u32];
-//        node_distances[i].push((0, i as u32));
-//
-//        loop {
-////            if search_stack.len() > 5*samp_freq{
-////                break;
-////            }
-//            let mut found_coord_node = false;
-//            for child in parent_node.child_nodes.iter() {
-//                let child_node = &ref_nodes[*child as usize];
-//                //Is a coordinate node or childless
-//                if (!child_node.actual_ref_positions.is_empty() ||
-//                    child_node.child_nodes.is_empty() ||
-//                    curr_visited_nodes.contains_key(child) ||
-//                    search_stack.len() > 2*samp_freq) &&
-//                    !found_coord_node
-//                {
-//                    found_coord_node = true;
-//                    for node_id in search_stack.iter() {
-//                        if *node_id == i as u32 {
-//                            continue;
-//                        }
-//                        let node_id_dist = curr_visited_nodes[node_id];
-//                        if node_id_dist > dist_from_coord_node / 2 && !child_node.actual_ref_positions.is_empty(){
-//                            node_distances[(*node_id) as usize]
-//                                .push((dist_from_coord_node - node_id_dist, child_node.id));
-//                        } else {
-//                            node_distances[(*node_id) as usize].push((node_id_dist, i as u32));
-//                        }
-//                    }
-//                } else if !curr_visited_nodes.contains_key(child) {
-//                    nodes_to_search.push(*child);
-//                    curr_visited_nodes.insert(*child, dist_from_coord_node);
-//                }
-//            }
-//            if found_coord_node {
-//                loop {
-//                    if nodes_to_search.is_empty()
-//                        || parent_node
-//                            .child_nodes
-//                            .contains(nodes_to_search.last().unwrap())
-//                    {
-//                        break;
-//                    }
-//                    let pop = search_stack.pop();
-//                    if pop.is_none() {
-//                        break;
-//                    }
-//                    if ref_nodes[pop.unwrap() as usize]
-//                        .child_nodes
-//                        .contains(nodes_to_search.last().unwrap())
-//                    {
-//                        break;
-//                    }
-//                }
-//            }
-//
-//            if nodes_to_search.is_empty() {
-//                break;
-//            }
-//            dist_from_coord_node += 1;
-//            let next_id = nodes_to_search.pop().unwrap() as usize;
-//            parent_node = &ref_nodes[next_id];
-//            search_stack.push(next_id as u32);
-//        }
-//    }
-//
-//    let mut num_some = 0;
-//    for (i, close_vec) in node_distances.iter().enumerate() {
-//        let closest_node = close_vec.iter().min();
-//        if !closest_node.is_none() {
-//            num_some += 1;
-////            println!("{}-{:?}",i,closest_node);
-//        }
-//    }
-//    println!(
-//        "Done finding closest nodes {} - {}",
-//        num_some,
-//        ref_nodes.len()
-//    );
-//    panic!();
-//    return closest_nodes;
-//}
-
 pub fn get_closest_node(ref_nodes: &Vec<KmerNode>) -> Vec<Option<u32>> {
     let mut closest_nodes = vec![None; ref_nodes.len()];
     let mut dist_to_coord_nodes = vec![vec![]; ref_nodes.len()];
     let mut visited_nodes = vec![false; ref_nodes.len()];
 
-    let mut in_edges = vec![vec![];ref_nodes.len()];
+    let mut in_edges = vec![vec![]; ref_nodes.len()];
     for node in ref_nodes.iter() {
         for child_id in node.child_nodes.iter() {
             let edges = &mut in_edges[(*child_id) as usize];
@@ -559,9 +523,9 @@ pub fn get_closest_node(ref_nodes: &Vec<KmerNode>) -> Vec<Option<u32>> {
         let mut closest_node = None;
         let mut wander_dist = 0;
 
-        if !parent_node.actual_ref_positions.is_empty(){
+        if !parent_node.actual_ref_positions.is_empty() {
             closest_nodes[i] = Some(i as u32);
-            continue
+            continue;
         }
 
         while !coord_node_found {
@@ -577,7 +541,7 @@ pub fn get_closest_node(ref_nodes: &Vec<KmerNode>) -> Vec<Option<u32>> {
                     closest_node = Some(child_node.id);
                     break;
                 }
-                if !branching && child_node.actual_ref_positions.is_empty(){
+                if !branching && child_node.actual_ref_positions.is_empty() {
                     unitig_nodes.push((*child) as usize);
                 }
                 if !curr_visited_nodes.contains(child) {
@@ -600,76 +564,80 @@ pub fn get_closest_node(ref_nodes: &Vec<KmerNode>) -> Vec<Option<u32>> {
             }
         }
     }
-    //Backward iteration
-    let mut visited_nodes = vec![false; ref_nodes.len()];
-    for i in 0..ref_nodes.len() {
-        if visited_nodes[i] {
-            continue;
-        }
-
-        let mut curr_visited_nodes = FxHashSet::default();
-        let mut unitig_nodes = vec![i];
-        let mut parent_node = &ref_nodes[i];
-        let mut branching = false;
-        let mut coord_node_found = false;
-        let mut nodes_to_search = VecDeque::new();
-        let mut closest_node = None;
-        let mut wander_dist = 0;
-        if !parent_node.actual_ref_positions.is_empty(){
-            closest_nodes[i] = Some(i as u32);
-            continue
-        }
-
-        while !coord_node_found {
-            if !in_edges[parent_node.id as usize].is_empty(){
-                let children = &in_edges[parent_node.id as usize];
-                if children.len() > 1{
-                    branching = true;
-                }
-
-                for child in children.iter() {
-                    let child_node = &ref_nodes[*child as usize];
-
-                    if !child_node.actual_ref_positions.is_empty() {
-                        coord_node_found = true;
-                        closest_node = Some(child_node.id);
-                        break;
-                    }
-                    if !branching {
-                        unitig_nodes.push((*child) as usize);
-                    }
-                    if !curr_visited_nodes.contains(child) {
-                        nodes_to_search.push_back(*child);
-                        curr_visited_nodes.insert(*child);
-                    }
-                }
-            }
-            else{
-                break;
-            }
-
-            if nodes_to_search.is_empty() {
-                break;
-            }
-            parent_node = &ref_nodes[nodes_to_search.pop_front().unwrap() as usize];
-            wander_dist += 1;
-        }
-
-        for (j, id) in unitig_nodes.iter().enumerate() {
-            visited_nodes[*id] = true;
-            if let Some(c_node) = closest_node {
-                dist_to_coord_nodes[*id].push((wander_dist - j as u32, c_node));
-            }
-        }
-    }
+    //    //Backward iteration
+    //    let mut visited_nodes = vec![false; ref_nodes.len()];
+    //    for i in 0..ref_nodes.len() {
+    //        if visited_nodes[i] {
+    //            continue;
+    //        }
+    //
+    //        let mut curr_visited_nodes = FxHashSet::default();
+    //        let mut unitig_nodes = vec![i];
+    //        let mut parent_node = &ref_nodes[i];
+    //        let mut branching = false;
+    //        let mut coord_node_found = false;
+    //        let mut nodes_to_search = VecDeque::new();
+    //        let mut closest_node = None;
+    //        let mut wander_dist = 0;
+    //        if !parent_node.actual_ref_positions.is_empty(){
+    //            closest_nodes[i] = Some(i as u32);
+    //            continue
+    //        }
+    //
+    //        while !coord_node_found {
+    //            if !in_edges[parent_node.id as usize].is_empty(){
+    //                let children = &in_edges[parent_node.id as usize];
+    //                if children.len() > 1{
+    //                    branching = true;
+    //                }
+    //
+    //                for child in children.iter() {
+    //                    let child_node = &ref_nodes[*child as usize];
+    //
+    //                    if !child_node.actual_ref_positions.is_empty() {
+    //                        coord_node_found = true;
+    //                        closest_node = Some(child_node.id);
+    //                        break;
+    //                    }
+    //                    if !branching {
+    //                        unitig_nodes.push((*child) as usize);
+    //                    }
+    //                    if !curr_visited_nodes.contains(child) {
+    //                        nodes_to_search.push_back(*child);
+    //                        curr_visited_nodes.insert(*child);
+    //                    }
+    //                }
+    //            }
+    //            else{
+    //                break;
+    //            }
+    //
+    //            if nodes_to_search.is_empty() {
+    //                break;
+    //            }
+    //            parent_node = &ref_nodes[nodes_to_search.pop_front().unwrap() as usize];
+    //            wander_dist += 1;
+    //        }
+    //
+    //        for (j, id) in unitig_nodes.iter().enumerate() {
+    //            visited_nodes[*id] = true;
+    //            if let Some(c_node) = closest_node {
+    //                dist_to_coord_nodes[*id].push((wander_dist - j as u32, c_node));
+    //            }
+    //        }
+    //    }
     let mut num_some = 0;
-    for (i,vec) in dist_to_coord_nodes.iter().enumerate(){
+    for (i, vec) in dist_to_coord_nodes.iter().enumerate() {
         let closest_node = vec.iter().min();
         if !closest_node.is_none() {
             closest_nodes[i] = Some(closest_node.unwrap().1);
             num_some += 1;
         }
     }
-    println!("Done finding closest nodes {} - {}", num_some, ref_nodes.len());
+    println!(
+        "Done finding closest nodes {} - {}",
+        num_some,
+        ref_nodes.len()
+    );
     return closest_nodes;
 }

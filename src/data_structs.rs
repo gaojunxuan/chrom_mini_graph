@@ -12,13 +12,15 @@ pub type Color = u128;
 pub struct KmerNode{
     pub kmer: Kmer16,
     pub order: u32,
+    pub order_val: u32,
     pub color: Color,
     pub child_nodes: SmallVec<[u32;1]>,
     pub child_edge_distance: SmallVec<[(u16,(Color,u8));1]>,
-//    pub child_nodes: Vec<u32>,
     pub id: u32,
     pub canonical: bool,
     pub actual_ref_positions: SmallVec<[usize;0]>,
+    pub repetitive: bool,
+    pub primary_base: Option<u32>
 }
 
 pub struct BamInfo{
