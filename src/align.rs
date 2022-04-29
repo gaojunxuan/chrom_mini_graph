@@ -296,7 +296,7 @@ pub fn get_bam_record(bam_info: BamInfo, headerview: &HeaderView) -> Record {
     let mut rec = Record::new();
     let cigar_vec = &bam_info.cigar;
     let mut hts_cigar_vec = vec![];
-    for oplen in cigar_vec {
+    for (i,oplen) in cigar_vec.iter().enumerate() {
         let op = oplen.op;
         let len = oplen.len;
         let hts_op;
@@ -304,9 +304,21 @@ pub fn get_bam_record(bam_info: BamInfo, headerview: &HeaderView) -> Record {
         if op == Operation::M {
             hts_op = hts_Cigar::Match(len as u32);
         } else if op == Operation::D {
-            hts_op = hts_Cigar::Del(len as u32);
+            if i == 0 || i == cigar_vec.len() - 1{
+//                hts_op = hts_Cigar::HardClip(len as u32);
+                hts_op = hts_Cigar::Del(len as u32);
+            }
+            else{
+                hts_op = hts_Cigar::Del(len as u32);
+            }
         } else if op == Operation::I {
-            hts_op = hts_Cigar::Ins(len as u32);
+            if i == 0 || i == cigar_vec.len() - 1{
+//                hts_op = hts_Cigar::HardClip(len as u32);
+                hts_op = hts_Cigar::Ins(len as u32);
+            }
+            else{
+                hts_op = hts_Cigar::Ins(len as u32);
+            }
         } else {
             hts_op = hts_Cigar::RefSkip(len as u32);
         }

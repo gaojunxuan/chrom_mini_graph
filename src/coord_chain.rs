@@ -522,7 +522,7 @@ pub fn score_primary_anchors_coords(
     let mut interval_pointer_array: Vec<usize> = (0..pointer_array.len()).collect();
     let adj_h = (h * primary_ref_anchors.len()) as f64 / 12500 as f64 + 20.;
     let adj_h = adj_h as usize;
-    let adj_h = usize::max(adj_h as usize, h * 3);
+    let adj_h = usize::min(adj_h as usize, h * 2);
     for i in 1..primary_ref_anchors.len() {
         let mut best_f_i = 0. as f64;
         let mut best_j = usize::MAX;
@@ -598,7 +598,7 @@ pub fn heuristic_score_coord(ref_order_dist: f64, query_order_dist: f64) -> f64 
     //    let max_dist = f64::max(ref_order_dist,query_order_dist);
     //    let dist_ref = -1.0 * ref_order_dist;
     //    let dist_query = 30.0 - f64::sqrt(max_dist);
-    let mut gap_cost = (ref_order_dist - query_order_dist).abs().powf(1.25);
+    let mut gap_cost = (ref_order_dist - query_order_dist).abs();
     if query_order_dist > ref_order_dist {
     } else {
         //        gap_cost = (ref_order_dist - query_order_dist) * 0.2;

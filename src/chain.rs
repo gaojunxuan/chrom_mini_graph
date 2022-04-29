@@ -1020,7 +1020,7 @@ pub fn score_anchors(
     }
     let mandatory_color = Color::MAX;
     let adj_h = (h * anchors.len()) as f64 / 12500 as f64 + 20.;
-    let adj_h = usize::max(adj_h as usize, h * 3);
+    let adj_h = usize::min(adj_h as usize, h * 2);
 
     for i in 1..anchors.len() {
         let q_oval;
@@ -1265,7 +1265,7 @@ pub fn get_best_chains(
         println!("End/start of query anchors: {},{}", q_end, q_start);
 
         if q_start >= q_end || ref_start >= ref_end {
-            return vec![];
+//            best_seq_anchors = best_seq_anchors.into_iter().rev().collect();
         }
         //    println!(
         //        "Ref/Query order anchor dist {},{}",

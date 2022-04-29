@@ -813,7 +813,7 @@ fn main() {
                                     let score = best_anchors_both_strands[best_index].1;
                                     let chain_number = chain_numbers[best_index];
                                     if (best_score < score + 50.
-                                        || (best_score - score) < 0.05 * (best_score + 1000.))
+                                        || (best_score - score) < 0.05 * (&best_anchors_both_strands[best_index].0.len() * 16) as f64)
                                         && !used_chains.contains(&chain_number)
                                     {
                                         used_chains.insert(chain_number);
