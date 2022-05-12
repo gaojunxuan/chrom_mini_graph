@@ -398,12 +398,12 @@ pub fn open_sync_seeds(
 
     for i in 0..syncmer_seeds.len() {
         if i == syncmer_seeds.len() - 1 {
-            syncmer_seeds[i].child_nodes.push(0 as u32);
-            //TODO this is incorrect
-            let dist_on_genome = 1;
-            syncmer_seeds[i]
-                .child_edge_distance
-                .push((dist_on_genome as u16, (1, 0)));
+//            syncmer_seeds[i].child_nodes.push(0 as u32);
+//            //TODO this is incorrect
+//            let dist_on_genome = 1;
+//            syncmer_seeds[i]
+//                .child_edge_distance
+//                .push((dist_on_genome as u16, (1, 0)));
         } else {
             syncmer_seeds[i].child_nodes.push((i + 1) as u32);
             let dist_on_genome = positions_selected[i + 1] - positions_selected[i];

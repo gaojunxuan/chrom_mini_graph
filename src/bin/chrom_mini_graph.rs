@@ -659,7 +659,8 @@ fn main() {
                             }
                             let now = Instant::now();
 
-                            let (best_colors, best_list_anchors) = chain::get_best_path_from_chain2(
+//                            let (best_colors, best_list_anchors) = chain::get_best_path_from_chain2(
+                            let (best_colors, best_list_anchors) = chain::get_best_path_from_chain_rewrite(
                                 best_anchors,
                                 &ref_graph,
                                 &order_to_id,
@@ -723,7 +724,7 @@ fn main() {
                                         let now = Instant::now();
 
                                         let (best_colors, best_list_anchors) =
-                                            chain::get_best_path_from_chain2(
+                                            chain::get_best_path_from_chain_rewrite(
                                                 best_anchors,
                                                 &ref_graph,
                                                 &order_to_id,

@@ -61,10 +61,10 @@ fn heuristic_score(ref_order_dist: f64, query_order_dist: f64) -> f64 {
     //    let dist_ref = -1.0 * ref_order_dist;
     //    let dist_query = 30.0 - f64::sqrt(max_dist);
     let mut gap_cost = (ref_order_dist - query_order_dist).abs();
-//    if query_order_dist * query_order_dist + 50. < ref_order_dist {
-//    } else {
-//        gap_cost = f64::min((ref_order_dist - query_order_dist).sqrt(), gap_cost);
-//    }
+    //    if query_order_dist * query_order_dist + 50. < ref_order_dist {
+    //    } else {
+    //        gap_cost = f64::min((ref_order_dist - query_order_dist).sqrt(), gap_cost);
+    //    }
     //    let fuzzy_gap_cost = 500.;
     //    let fuzzy_gap_cost = gap_cost.powi(2) / query_order_dist;
     //    let linear_cost = f64::sqrt(ref_order_dist) + query_order_dist;
@@ -344,12 +344,11 @@ pub fn chain_seeds<'a>(
             .collect();
         //vec![(best_chain, aln_score, forward_strand)];
     } else {
-//        let chain_heuristic;
-        if forward_anchors.len() > 100000 || backward_anchors.len() > 100000{
-//            chain_heuristic = true;
-        }
-        else{
-//            chain_heuristic = false;
+        //        let chain_heuristic;
+        if forward_anchors.len() > 100000 || backward_anchors.len() > 100000 {
+            //            chain_heuristic = true;
+        } else {
+            //            chain_heuristic = false;
         }
         forward_strand = true;
         let chains_scores_forward = get_chains(
@@ -446,6 +445,155 @@ pub fn graph_dist(
     return f64::MAX;
 }
 
+pub fn get_best_path_from_chain_rewrite(
+    anchors: &Anchors,
+    ref_nodes: &Vec<KmerNode>,
+    order_to_id: &Vec<u32>,
+    query_nodes: &Vec<KmerNode>,
+    read_length: usize,
+    is_primary_ref: bool,
+) -> (Vec<Color>, Vec<(Anchors, f64)>) {
+    let mut colour_paths: FxHashMap<usize, (f64, usize, usize, usize)> = FxHashMap::default();
+
+    if anchors.len() == 0 {
+        println!("No anchors found");
+        return (vec![], vec![]);
+    }
+    let last_node = &ref_nodes[anchors.last().unwrap().0 as usize];
+    let first_node = &ref_nodes[anchors[0].0 as usize];
+    let mut current_anchor_id = 0;
+
+    for i in first_node.order..last_node.order + 1 {
+        let id_of_node = order_to_id[i as usize];
+        let intermediate_node = &ref_nodes[id_of_node as usize];
+        let anchor_hit;
+        if anchors[current_anchor_id].0 == intermediate_node.id {
+            anchor_hit = true;
+        } else {
+            anchor_hit = false;
+        }
+        let colours = align::get_nonzero_bits_fast(intermediate_node.color);
+        for colour in colours {
+            if colour_paths.contains_key(&colour) {
+                if anchor_hit {
+                    let mut tup = colour_paths.get_mut(&colour).unwrap();
+                    let last_anchor_seen = tup.2;
+                    let query_dist;
+                    query_dist = (query_nodes[anchors[current_anchor_id].1 as usize]
+                        .actual_ref_positions[0] as i64
+                        - query_nodes[anchors[last_anchor_seen].1 as usize].actual_ref_positions[0]
+                            as i64)
+                        .abs();
+                    let ref_dist = tup.3;
+                    let gap_cost = ((query_dist as i64).abs() - ref_dist as i64).abs() as f64;
+                    let new_score_add = (constants::PATH_CHAIN_BASE_SCORE - gap_cost) as f64;
+                    tup.0 += new_score_add;
+                    tup.2 = current_anchor_id;
+                    tup.3 = 0;
+                }
+            } else {
+                colour_paths.insert(colour, (0.0, current_anchor_id, current_anchor_id, 0));
+            }
+        }
+
+        for edge in intermediate_node.child_edge_distance.iter() {
+            let edge_dist = edge.0;
+            let edge_colour = edge.1 .0;
+            for colour in align::get_nonzero_bits_fast(edge_colour) {
+                let tup = colour_paths.get_mut(&colour);
+                if tup.is_none() {
+                    dbg!(
+                        &colour,
+                        &colour_paths,
+                        &intermediate_node,
+                        align::get_nonzero_bits_fast(intermediate_node.color)
+                    );
+                    panic!()
+                }
+                let tup = tup.unwrap();
+                tup.3 += edge_dist as usize;
+            }
+        }
+        if anchor_hit {
+            current_anchor_id += 1;
+        }
+    }
+
+    let mut best_path_colors = vec![];
+    let mut best_path_scores = vec![];
+    let mut best_path_start_anchors = vec![];
+
+    if colour_paths.is_empty() {
+        println!("Colour paths is empty");
+        return (vec![], vec![]);
+    }
+
+    let read_length = (query_nodes.iter().last().unwrap().actual_ref_positions[0] as i64
+        - query_nodes[0].actual_ref_positions[0] as i64)
+        .abs();
+
+    for (_colour, tup) in colour_paths.iter_mut() {
+        let last_node_q = &query_nodes[anchors.last().unwrap().1 as usize];
+        let first_node_q = &query_nodes[anchors[tup.1].1 as usize];
+        let total_query_dist = (last_node_q.actual_ref_positions[0] as i64
+            - first_node_q.actual_ref_positions[0] as i64)
+            .abs();
+
+        let length_diff = read_length - total_query_dist;
+        tup.0 -= length_diff as f64;
+    }
+
+    let mut colour_paths_vec: Vec<(usize, (f64, usize, usize, usize))> =
+        colour_paths.into_iter().collect();
+    colour_paths_vec.sort_by(|x, y| y.1 .0.partial_cmp(&x.1 .0).unwrap());
+    let best_path_score = colour_paths_vec[0].1 .0;
+
+    if best_path_score < (anchors.len() as f64) * constants::PATH_THRESHOLD_FRACTION
+        && !is_primary_ref
+    {
+        println!(
+            "Best path {} < {} is bad",
+            best_path_score,
+            anchors.len() as f64 * constants::PATH_THRESHOLD_FRACTION
+        );
+        return (vec![], vec![]);
+    } else if best_path_score < -(query_nodes.len() as f64) * constants::PATH_THRESHOLD_FRACTION {
+        println!(
+            "Best path {} < {} is bad",
+            best_path_score,
+            anchors.len() as f64 * constants::PATH_THRESHOLD_FRACTION
+        );
+        return (vec![], vec![]);
+    }
+
+    for i in 0..usize::min(5, colour_paths_vec.len()) {
+        let colour_index = colour_paths_vec[i].0;
+        let tup = colour_paths_vec[i].1;
+        best_path_colors.push(1 << colour_index);
+        best_path_scores.push(tup.0);
+        best_path_start_anchors.push(tup.1);
+    }
+
+    let mut consistent_color_anchors = vec![];
+    for j in 0..best_path_start_anchors.len() {
+        let mut consistent_anchors = vec![];
+        let start_anchor = best_path_start_anchors[j];
+        for i in start_anchor..anchors.len() {
+            let anchor = anchors[i];
+            if &ref_nodes[anchor.0 as usize].color & best_path_colors[j] == best_path_colors[j] {
+                consistent_anchors.push(anchor);
+            }
+        }
+        consistent_color_anchors.push((consistent_anchors, best_path_scores[j]));
+    }
+
+    for tup in colour_paths_vec.iter() {
+        println!("{:?}", tup);
+    }
+
+    return (best_path_colors, consistent_color_anchors);
+}
+
 pub fn get_best_path_from_chain2(
     anchors: &Anchors,
     ref_nodes: &Vec<KmerNode>,
@@ -505,9 +653,9 @@ pub fn get_best_path_from_chain2(
             parent_vec = in_edges_dict.get(&intermediate_node.id).unwrap().to_vec();
         }
 
-        let anchor_hit;
         let mut unreachable_past = false;
 
+        let anchor_hit;
         if anchors[current_anchor_id].0 == intermediate_node.id {
             anchor_hit = true;
         } else {
@@ -1265,7 +1413,7 @@ pub fn get_best_chains(
         println!("End/start of query anchors: {},{}", q_end, q_start);
 
         if q_start >= q_end || ref_start >= ref_end {
-//            best_seq_anchors = best_seq_anchors.into_iter().rev().collect();
+            //            best_seq_anchors = best_seq_anchors.into_iter().rev().collect();
         }
         //    println!(
         //        "Ref/Query order anchor dist {},{}",

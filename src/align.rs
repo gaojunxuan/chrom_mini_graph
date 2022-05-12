@@ -13,6 +13,24 @@ use rust_htslib::bam::header::{Header, HeaderRecord};
 use rust_htslib::bam::record::{Cigar as hts_Cigar, CigarString, Record};
 use rust_htslib::bam::{Format, HeaderView, Writer};
 use std::time::Instant;
+
+#[inline]
+pub fn get_nonzero_bits_fast(n: Color) -> Vec<usize> {
+    let mut bit_poses = vec![];
+    let mut temp = n;
+    bit_poses.reserve(128);
+    assert!(n != 0);
+    loop {
+        if temp == 0{
+            break;
+        }
+        let index = temp.trailing_zeros();
+        bit_poses.push(index as usize);
+        temp ^= 1 << index;
+    }
+
+    bit_poses
+}
 #[inline]
 pub fn get_nonzero_bits(n: Color) -> Vec<usize> {
     let mut temp = n;
