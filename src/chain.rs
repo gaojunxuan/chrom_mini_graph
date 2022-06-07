@@ -1,4 +1,5 @@
 use crate::align;
+use simple_logger::SimpleLogger;
 use crate::avl_tree::SearchTree;
 use crate::constants;
 use crate::data_structs::KmerNode;
@@ -314,7 +315,7 @@ pub fn chain_seeds<'a>(
         forward_strand = true;
     }
 
-    println!(
+    log::trace!(
         "Num forward/back anchors {},{}, Query length {}",
         forward_anchors.len(),
         backward_anchors.len(),
@@ -456,7 +457,7 @@ pub fn get_best_path_from_chain_rewrite(
     let mut colour_paths: FxHashMap<usize, (f64, usize, usize, usize)> = FxHashMap::default();
 
     if anchors.len() == 0 {
-        println!("No anchors found");
+        log::trace!("No anchors found");
         return (vec![], vec![]);
     }
     let last_node = &ref_nodes[anchors.last().unwrap().0 as usize];
@@ -524,7 +525,7 @@ pub fn get_best_path_from_chain_rewrite(
     let mut best_path_start_anchors = vec![];
 
     if colour_paths.is_empty() {
-        println!("Colour paths is empty");
+        log::trace!("Colour paths is empty");
         return (vec![], vec![]);
     }
 
@@ -551,14 +552,14 @@ pub fn get_best_path_from_chain_rewrite(
     if best_path_score < (anchors.len() as f64) * constants::PATH_THRESHOLD_FRACTION
         && !is_primary_ref
     {
-        println!(
+        log::trace!(
             "Best path {} < {} is bad",
             best_path_score,
             anchors.len() as f64 * constants::PATH_THRESHOLD_FRACTION
         );
         return (vec![], vec![]);
     } else if best_path_score < -(query_nodes.len() as f64) * constants::PATH_THRESHOLD_FRACTION {
-        println!(
+        log::trace!(
             "Best path {} < {} is bad",
             best_path_score,
             anchors.len() as f64 * constants::PATH_THRESHOLD_FRACTION
@@ -588,7 +589,7 @@ pub fn get_best_path_from_chain_rewrite(
     }
 
     for tup in colour_paths_vec.iter() {
-        println!("{:?}", tup);
+        log::trace!("{:?}", tup);
     }
 
     return (best_path_colors, consistent_color_anchors);
@@ -607,7 +608,7 @@ pub fn get_best_path_from_chain2(
     let mut current_anchor_id = 0;
 
     if anchors.len() == 0 {
-        println!("No anchors found");
+        log::trace!("No anchors found");
         return (vec![], vec![]);
     }
 
@@ -800,12 +801,12 @@ pub fn get_best_path_from_chain2(
     let best_path = best_paths.get_mut(&last_node.id);
     //    let best_path = best_paths.get(&best_node.id);
     if let None = best_path {
-        println!("Best path is None");
+        log::warn!("Best path is None");
         return (vec![], vec![]);
     }
     let best_path = best_path.unwrap();
     if best_path.is_empty() {
-        println!("Best path is None");
+        log::warn!("Best path is None");
         return (vec![], vec![]);
     }
 
@@ -833,14 +834,14 @@ pub fn get_best_path_from_chain2(
     if best_path_score < (anchors.len() as f64) * constants::PATH_THRESHOLD_FRACTION
         && !is_primary_ref
     {
-        println!(
+        log::trace!(
             "Best path {} < {} is bad",
             best_path_score,
             anchors.len() as f64 * constants::PATH_THRESHOLD_FRACTION
         );
         return (vec![], vec![]);
     } else if best_path_score < -(query_nodes.len() as f64) * constants::PATH_THRESHOLD_FRACTION {
-        println!(
+        log::trace!(
             "Best path {} < {} is bad",
             best_path_score,
             anchors.len() as f64 * constants::PATH_THRESHOLD_FRACTION
@@ -881,7 +882,7 @@ pub fn get_best_path_from_chain2(
             );
         }
     }
-    println!("{:?}", best_paths.get(&last_node.id));
+    log::trace!("{:?}", best_paths.get(&last_node.id));
     //    println!("{:?}", best_paths.get(&best_node.id));
     return (best_path_colors, consistent_color_anchors);
 }
@@ -1325,7 +1326,7 @@ pub fn get_best_chains(
     let cutoff_percent = constants::SECONDARY_CHAIN_CUTOFF_PERCENT;
     let cutoff_score = constants::CHAIN_CUTOFF_SCORE;
     if best_chain_score < cutoff_score {
-        println!("Poor chaining score {}", best_chain_score);
+        log::trace!("Poor chaining score {}", best_chain_score);
         return vec![];
     }
     for i in 0..vec.len() {
@@ -1395,7 +1396,7 @@ pub fn get_best_chains(
 
         //    dbg!(f[best_i]);
 
-        println!(
+        log::trace!(
             "Chain number {}, Chain score {}, Color {:?}, Length {}",
             i,
             ith_score,
@@ -1406,11 +1407,11 @@ pub fn get_best_chains(
         let ref_start =
             seeds_ref[anchors[chain_sequence[chain_sequence.len() - 1]].0 as usize].order;
 
-        println!("End/start of ref anchors: {},{}", ref_end, ref_start);
+        log::trace!("End/start of ref anchors: {},{}", ref_end, ref_start);
         let q_end = seeds_q[anchors[chain_sequence[0]].1 as usize].order;
         let q_start = seeds_q[anchors[chain_sequence[chain_sequence.len() - 1]].1 as usize].order;
 
-        println!("End/start of query anchors: {},{}", q_end, q_start);
+        log::trace!("End/start of query anchors: {},{}", q_end, q_start);
 
         if q_start >= q_end || ref_start >= ref_end {
             //            best_seq_anchors = best_seq_anchors.into_iter().rev().collect();

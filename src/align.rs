@@ -12,6 +12,7 @@ use fxhash::FxHashSet;
 use rust_htslib::bam::header::{Header, HeaderRecord};
 use rust_htslib::bam::record::{Cigar as hts_Cigar, CigarString, Record};
 use rust_htslib::bam::{Format, HeaderView, Writer};
+use simple_logger::SimpleLogger;
 use std::time::Instant;
 
 #[inline]
@@ -21,7 +22,7 @@ pub fn get_nonzero_bits_fast(n: Color) -> Vec<usize> {
     bit_poses.reserve(128);
     assert!(n != 0);
     loop {
-        if temp == 0{
+        if temp == 0 {
             break;
         }
         let index = temp.trailing_zeros();
@@ -110,12 +111,14 @@ pub fn get_coords(
     let mut current_anchor = 0;
     let mut visited_nodes = FxHashSet::default();
     loop {
-        if parent_node.id == anchors[current_anchor].0 {
-            kmer_hit_positions.push((
-                path_dist as i64,
-                q_nodes[anchors[current_anchor].1 as usize].actual_ref_positions[0],
-            ));
-            current_anchor += 1;
+        if current_anchor < anchors.len() {
+            if parent_node.id == anchors[current_anchor].0 {
+                kmer_hit_positions.push((
+                    path_dist as i64,
+                    q_nodes[anchors[current_anchor].1 as usize].actual_ref_positions[0],
+                ));
+                current_anchor += 1;
+            }
         }
         if num_trav > 50000 {
             //            dbg!(&parent_node);
@@ -213,7 +216,7 @@ pub fn get_coords(
                 }
             }
         }
-        if parent_node.id == last_node.id {
+        if parent_node.order >= last_node.order && abs_pos_index != 0 {
             break;
         }
         let mut found = false;
@@ -241,19 +244,19 @@ pub fn get_coords(
         //            }
         //        }
         if !found
-            || parent_node.order > last_node.order
             //|| path_dist > 10000000
             || visited_nodes.contains(&parent_node.id)
         //|| num_trav > 80000
         {
-            dbg!(num_trav, found, bit);
-            dbg!(&parent_node, &last_node, &first_node);
-            dbg!(&ref_nodes[parent_node.child_nodes[0] as usize]);
-            dbg!(&parent_node.order, last_node.order);
-            dbg!(visited_nodes.contains(&parent_node.id));
-            dbg!(path_dist);
-            dbg!(num_trav);
-            panic!();
+            log::warn!("Path localization failed for read; TODO fix this.");
+            //            dbg!(num_trav, found, bit, bit_pos);
+            //            dbg!(&parent_node, &last_node, &first_node);
+            //            dbg!(&ref_nodes[parent_node.child_nodes[0] as usize]);
+            //            dbg!(&parent_node.order, last_node.order);
+            //            dbg!(visited_nodes.contains(&parent_node.id));
+            //            dbg!(path_dist);
+            //            dbg!(num_trav);
+            break;
         }
     }
 
@@ -314,7 +317,7 @@ pub fn get_bam_record(bam_info: BamInfo, headerview: &HeaderView) -> Record {
     let mut rec = Record::new();
     let cigar_vec = &bam_info.cigar;
     let mut hts_cigar_vec = vec![];
-    for (i,oplen) in cigar_vec.iter().enumerate() {
+    for (i, oplen) in cigar_vec.iter().enumerate() {
         let op = oplen.op;
         let len = oplen.len;
         let hts_op;
@@ -322,19 +325,17 @@ pub fn get_bam_record(bam_info: BamInfo, headerview: &HeaderView) -> Record {
         if op == Operation::M {
             hts_op = hts_Cigar::Match(len as u32);
         } else if op == Operation::D {
-            if i == 0 || i == cigar_vec.len() - 1{
-//                hts_op = hts_Cigar::HardClip(len as u32);
+            if i == 0 || i == cigar_vec.len() - 1 {
+                //                hts_op = hts_Cigar::HardClip(len as u32);
                 hts_op = hts_Cigar::Del(len as u32);
-            }
-            else{
+            } else {
                 hts_op = hts_Cigar::Del(len as u32);
             }
         } else if op == Operation::I {
-            if i == 0 || i == cigar_vec.len() - 1{
-//                hts_op = hts_Cigar::HardClip(len as u32);
+            if i == 0 || i == cigar_vec.len() - 1 {
+                //                hts_op = hts_Cigar::HardClip(len as u32);
                 hts_op = hts_Cigar::Ins(len as u32);
-            }
-            else{
+            } else {
                 hts_op = hts_Cigar::Ins(len as u32);
             }
         } else {
@@ -381,10 +382,14 @@ pub fn align_from_chain(
     //    headerview: &HeaderView,
     //    writer: &mut Writer,
 ) -> Option<BamInfo> {
-    println!("Aligning to genome corresponding to colour {} (or {})", color.trailing_zeros(), chrom_names[(chroms.len() as u32 - color.trailing_zeros() - 1) as usize]);
+    log::trace!(
+        "Aligning to genome corresponding to colour {} (or {})",
+        color.trailing_zeros(),
+        chrom_names[(chroms.len() as u32 - color.trailing_zeros() - 1) as usize]
+    );
     if anchors.len() < 3 {
-        println!("Less than 3 anchors, bad align");
-        println!("Alignment score: NA");
+        log::trace!("Less than 3 anchors, bad align");
+        log::trace!("Alignment score: NA");
         return None;
     }
 
@@ -394,8 +399,8 @@ pub fn align_from_chain(
     let (_ref_coords, kmer_hit_coords) =
         align::get_coords(&anchors, &ref_graph, &read_seeds, color, &chroms);
     if kmer_hit_coords.len() < 3 {
-        println!("Less than 3 kmer hits, bad align");
-        println!("Alignment score: NA");
+        log::trace!("Less than 3 kmer hits, bad align");
+        log::trace!("Alignment score: NA");
         return None;
     }
     //            dbg!(kmer_hit_coords[0]);
@@ -458,7 +463,6 @@ pub fn align_from_chain(
             println!("End of chromosome mapping issue. Continue");
             return None;
         }
-        ref_map_string = ref_chrom.slice(a as usize, b as usize).to_string();
     } else {
         b = kmer_hit_coords[0].0 + 16;
         if kmer_hit_coords.last().unwrap().0 < 0 {
@@ -471,46 +475,164 @@ pub fn align_from_chain(
             println!("End of chromosome mapping issue. Continue");
             return None;
         }
-        ref_map_string = ref_chrom.slice(a as usize, b as usize).rc().to_string();
     }
+
+    let read_map_string;
+    let read_map_string_slice;
+    let qual_map_string: Vec<u8>;
+    let c;
+    let d;
+    if read_strand {
+        c = kmer_hit_coords[0].1;
+        d = kmer_hit_coords.last().unwrap().1 + 16;
+    } else {
+        c = kmer_hit_coords.last().unwrap().1;
+        d = kmer_hit_coords[0].1 + 16;
+        //Need to reverse the quals TODO
+    }
+    let mut num_mm = 0;
+    let mut break_mm = 3;
+    let mut i_left = 1;
+    let mut i_right = 1;
+    if read_strand && *strand_chrom {
+        while a as usize >= i_left && c >= i_left {
+            if ref_chrom.get(a as usize - i_left) == read.get(c - i_left) {
+            } else {
+                num_mm += 1;
+                if num_mm > break_mm {
+                    break;
+                }
+            }
+            i_left += 1;
+        }
+        while b as usize + i_right <= ref_chrom.len() && d + i_right <= read.len() {
+            if ref_chrom.get(b as usize + i_right - 1) == read.get(d + i_right - 1) {
+            } else {
+                num_mm += 1;
+                if num_mm > break_mm{
+                    break;
+                }
+            }
+            i_right += 1;
+        }
+    } else if read_strand && !*strand_chrom {
+        while b as usize + i_left <= ref_chrom.len() && c >= i_left {
+            if ref_chrom.get(b as usize + i_left - 1) == reverse_comp_04(read.get(c - i_left)) {
+            } else {
+                num_mm += 1;
+                if num_mm > break_mm{
+                    break;
+                }
+            }
+            i_left += 1;
+        }
+        while a as usize >= i_right && d + i_right <= read.len() {
+            if ref_chrom.get(a as usize - i_right) == reverse_comp_04(read.get(d - 1 + i_right)) {
+            } else {
+                num_mm += 1;
+                if num_mm >  break_mm{
+                    break;
+                }
+            }
+                i_right += 1;
+        }
+    } else if !read_strand && *strand_chrom {
+        while a as usize >= i_left && d + i_left <= read.len() {
+            if ref_chrom.get(a as usize - i_left) == reverse_comp_04(read.get(d - 1 + i_left)) {
+            } else {
+                num_mm += 1;
+                if num_mm > break_mm{
+                    break;
+                }
+            }
+                i_left += 1;
+        }
+        while b as usize + i_right <= ref_chrom.len() && c >= i_right {
+            if ref_chrom.get(b as usize + i_right - 1) == reverse_comp_04(read.get(c - i_right)) {
+            } else {
+                num_mm += 1;
+                if num_mm > break_mm {
+                    break;
+                }
+            }
+                i_right += 1;
+        }
+    } else {
+        while b as usize + i_left <= ref_chrom.len() && d + i_left <= read.len() {
+            if ref_chrom.get(b as usize + i_left - 1) == read.get(d + i_left - 1) {
+            } else {
+                num_mm += 1;
+                if num_mm > break_mm{
+                    break;
+                }
+            }
+                i_left += 1;
+        }
+        while a as usize >= i_right && c >= i_right {
+            if ref_chrom.get(a as usize - i_right) == read.get(c - i_right) {
+            } else {
+                num_mm += 1;
+                if num_mm >  break_mm{
+                    break;
+                }
+            }
+                i_right += 1;
+        }
+    }
+    i_left -= 1;
+    i_right -= 1;
+    log::trace!("chrom, read, {}, {}", *strand_chrom, read_strand);
+    log::trace!(
+        "i_left {}, i_right {}, a {}, b {}, c {}, d{}",
+        i_left,
+        i_right,
+        a,
+        b,
+        c,
+        d
+    );
+    if *strand_chrom {
+        ref_map_string = ref_chrom
+            .slice(a as usize - i_left, b as usize + i_right)
+            .to_string();
+    } else {
+        ref_map_string = ref_chrom
+            .slice(a as usize - i_right, b as usize + i_left)
+            .rc()
+            .to_string();
+    }
+    if read_strand {
+        read_map_string = read.slice(c - i_left, d + i_right).to_string();
+        read_map_string_slice = read.slice(c - i_left, d + i_right);
+        qual_map_string = quals[c - i_left..d + i_right].to_vec();
+    } else {
+        read_map_string = read.slice(c - i_right, d + i_left).rc().to_string();
+        read_map_string_slice = read.slice(c - i_right, d + i_left).rc();
+        qual_map_string = quals[c - i_right..d + i_left]
+            .iter()
+            .rev()
+            .map(|x| *x)
+            .collect::<Vec<u8>>()
+            .to_owned();
+    }
+
     let start_pos_chrom;
     if read_strand == *strand_chrom {
         start_pos_chrom = a;
     } else {
         start_pos_chrom = a;
     }
-    let read_map_string;
-    let read_map_string_slice;
-    let qual_map_string;
-    if read_strand {
-        read_map_string = read
-            .slice(kmer_hit_coords[0].1, kmer_hit_coords.last().unwrap().1 + 16)
-            .to_string();
-        read_map_string_slice = read
-            .slice(kmer_hit_coords[0].1, kmer_hit_coords.last().unwrap().1 + 16);
-        qual_map_string = &quals[kmer_hit_coords[0].1..kmer_hit_coords.last().unwrap().1 + 16];
-    } else {
-        //Need to reverse the quals TODO
-        read_map_string = read
-            .slice(kmer_hit_coords.last().unwrap().1, kmer_hit_coords[0].1 + 16)
-            .rc()
-            .to_string();
-        read_map_string_slice = read
-            .slice(kmer_hit_coords.last().unwrap().1, kmer_hit_coords[0].1 + 16)
-            .rc();
-        qual_map_string = &quals[kmer_hit_coords.last().unwrap().1..kmer_hit_coords[0].1 + 16];
-    }
-
     let block_align = true;
 
     //ALIGNMENT
     if block_align {
         let now = Instant::now();
         let block_size = 512;
-//        let block_size = 64;
+        //        let block_size = 64;
         let r_cpy = ref_map_string.clone();
         let q_cpy = read_map_string.clone();
 
+        //        dbg!(&ref_map_string, &read_map_string.clone());
         let r = PaddedBytes::from_string::<NucMatrix>(ref_map_string, block_size);
         let q = PaddedBytes::from_string::<NucMatrix>(read_map_string.clone(), block_size);
         let gaps = Gaps {
@@ -523,32 +645,29 @@ pub fn align_from_chain(
 
         let res = a.res();
         let cigar = a.trace().cigar(res.query_idx, res.reference_idx);
-//        let fmt_string = cigar.format(&q_cpy.as_bytes(), &r_cpy.as_bytes());
-//        println!("{}\n{}", fmt_string.0, fmt_string.1);
-//        println!("Aligning time: {}", now.elapsed().as_secs_f32());
-        println!("Alignment score: {}", res.score);
+        //        let fmt_string = cigar.format(&q_cpy.as_bytes(), &r_cpy.as_bytes());
+        //        println!("{}\n{}", fmt_string.0, fmt_string.1);
+        //        println!("Aligning time: {}", now.elapsed().as_secs_f32());
+        log::trace!("Alignment score: {}", res.score);
         let ref_chrom_name = &chrom_names[chroms.len() - align::get_first_nonzero_bit(color) - 1];
         let seq;
         let cigar_vec: Vec<OpLen>;
-        if *strand_chrom{
+        if *strand_chrom {
             seq = read_map_string;
             cigar_vec = cigar.to_vec();
-        }
-        else{
+        } else {
             seq = read_map_string_slice.rc().to_string();
             cigar_vec = cigar.to_vec().into_iter().rev().collect();
         }
         let mapq_score = res.score as f64 / (q.len() + (read.len() - q.len()) * 2) as f64;
         let mapq;
-        if mapq_score < 0.{
+        if mapq_score < 0. {
             mapq = 0;
-        }
-        else{
+        } else {
             let mapq_temp = mapq_score.ln() * 40. + 65.;
-            if mapq_temp < 0.{
+            if mapq_temp < 0. {
                 mapq = 0;
-            }
-            else{
+            } else {
                 mapq = mapq_temp as i32;
             }
         }
@@ -557,7 +676,7 @@ pub fn align_from_chain(
         let bam_info = BamInfo {
             cigar: cigar_vec,
             sequence: seq,
-            quals: qual_map_string.to_owned(),
+            quals: qual_map_string,
             qname: read_id.clone(),
             strand: read_strand,
             ref_name: ref_chrom_name.clone(),
@@ -565,7 +684,7 @@ pub fn align_from_chain(
             mapq: mapq,
         };
 
-        println!("Read align time: {}", now.elapsed().as_secs_f32());
+        log::trace!("Read align time: {}", now.elapsed().as_secs_f32());
         return Some(bam_info);
     //        let bam_rec = align::get_bam_record(
     //            bam_info,
@@ -666,7 +785,7 @@ pub fn align_from_chain(
         let bam_info = BamInfo {
             cigar: op_vec,
             sequence: read_map_string,
-            quals: qual_map_string.to_owned(),
+            quals: qual_map_string,
             qname: read_id.clone(),
             strand: read_strand,
             ref_name: ref_chrom_name.clone(),
@@ -677,5 +796,18 @@ pub fn align_from_chain(
         println!("Read align time: {}", now.elapsed().as_secs_f32());
         return Some(bam_info);
     }
+}
 
+fn reverse_comp_04(a: u8) -> u8 {
+    if a == 0 {
+        return 3;
+    } else if a == 1 {
+        return 2;
+    } else if a == 2 {
+        return 1;
+    } else if a == 3 {
+        return 0;
+    } else {
+        panic!("Only 0-4 can be input in this function");
+    }
 }

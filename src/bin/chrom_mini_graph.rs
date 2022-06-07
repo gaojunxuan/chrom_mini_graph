@@ -1,4 +1,6 @@
 use bincode;
+use simple_logger::SimpleLogger;
+use log::LevelFilter;
 use bio::io::{fasta, fastq};
 use block_aligner::scan_block::*;
 use block_aligner::scores::*;
@@ -7,7 +9,7 @@ use chrom_mini_graph::chain;
 use chrom_mini_graph::constants;
 use chrom_mini_graph::coord_chain;
 use chrom_mini_graph::data_structs::KmerNode;
-use chrom_mini_graph::deconvolution;
+//use chrom_mini_graph::deconvolution;
 use chrom_mini_graph::graph_utils;
 use chrom_mini_graph::seeding_methods_bit;
 use clap::{App, AppSettings, Arg, SubCommand};
@@ -138,23 +140,11 @@ fn main() {
                         .hidden(true)
                 ).
                 arg(
-                    Arg::with_name("deconvolve")
-                        .short("D")
-                        .help("Deconvolve stuff (Default: off)")
-                        .hidden(true)
-                ).
-                arg(
                     Arg::with_name("penalty")
                         .short("p")
                         .help("Short read parameters. (Default: Long read params.)")
                         .takes_value(true)
                         .hidden(true)
-                ).
-                arg(
-                    Arg::with_name("samp_freq")
-                        .short("f")
-                        .help("Graph sampling frequency for strain detect. (Default: 30)")
-                        .takes_value(true)
                 ).
                 arg(
                     Arg::with_name("minimizer_weighting")
@@ -172,9 +162,13 @@ fn main() {
                 arg(
                     Arg::with_name("w")
                         .short("w")
-                        .help("w value (testing).")
+                        .help("Value of w for minimizer window size. (Default: 16)")
                         .takes_value(true)
-                        .hidden(true)
+                ).
+                arg(
+                    Arg::with_name("trace")
+                        .long("trace")
+                        .help("Output debug information for tracing.")
                 )
         )
         .get_matches();
@@ -221,6 +215,13 @@ fn main() {
         use_minimizers = true;
     }
 
+
+    if matches_subc.is_present("trace"){
+        SimpleLogger::new().with_level(LevelFilter::Trace).env().init().unwrap();
+    }
+    else{
+        SimpleLogger::new().with_level(LevelFilter::Debug).env().init().unwrap();
+    }
     let chain_heuristic;
     if matches_subc.is_present("chain_heuristic") {
         chain_heuristic = false;
@@ -562,6 +563,7 @@ fn main() {
         //        println!("Graph simp time {}", graph_simp_time.elapsed().as_secs_f32());
 
         let start_align = Instant::now();
+        let mut num_mapped_reads = Mutex::new(0);
         let mut record_container = vec![];
         let mut bam_info_container: Mutex<Vec<_>> = Mutex::new(vec![]);
         let mut best_hit_for_read: Mutex<FxHashMap<_, _>> = Mutex::new(FxHashMap::default());
@@ -569,7 +571,6 @@ fn main() {
         let mut records = reader.unwrap().records().peekable();
         //        let batch = num_t * 200;
         let batch = usize::MAX;
-        let time_stuff = true;
         while let Some(Ok(record)) = records.next() {
             if record_container.len() < batch {
                 record_container.push(record);
@@ -591,11 +592,8 @@ fn main() {
                         let mut chain_numbers = vec![];
                         let mut strand_anchor_vec = vec![];
 
-                        if time_stuff {
-                            println!("Preprocess time: {}", now.elapsed().as_secs_f32());
-                        }
-
-                        println!("---------------Read: {}---------------", read_id);
+                        log::trace!("Preprocess time: {}", now.elapsed().as_secs_f32());
+                        log::trace!("---------------Read: {}---------------", read_id);
                         let now = Instant::now();
                         let mut read_seeds;
                         let s2;
@@ -621,9 +619,7 @@ fn main() {
                                 false,
                             );
                         }
-                        if time_stuff {
-                            println!("Seeding time: {}", now.elapsed().as_secs_f32());
-                        }
+                        log::trace!("Seeding time: {}", now.elapsed().as_secs_f32());
 
                         read_seeds = s2.0;
                         let qlen = read_seeds.len();
@@ -642,9 +638,7 @@ fn main() {
                             circular,
                         );
 
-                        if time_stuff {
-                            println!("Chaining time: {}", now.elapsed().as_secs_f32());
-                        }
+                        log::trace!("Chaining time: {}", now.elapsed().as_secs_f32());
 
                         for (k, (best_anchors, _aln_score, read_strand)) in
                             anc_score_strand_vec.iter().enumerate()
@@ -669,9 +663,7 @@ fn main() {
                                 false,
                             );
 
-                            if time_stuff {
-                                println!("Path collection time: {}", now.elapsed().as_secs_f32());
-                            }
+                            log::trace!("Path collection time: {}", now.elapsed().as_secs_f32());
 
                             //TODO don't want to do clone every anchor list.
                             for i in 0..best_colors.len() {
@@ -685,11 +677,11 @@ fn main() {
                         if align {
                             let mut do_align = true;
                             let do_base_chain = true;
-                            if best_anchors_both_strands.len() == 0 {
+                            if best_anchors_both_strands.len() == 0 && false{
                                 if read.len() > constants::READ_LENGTH_SUPER_CHAIN_CUTOFF
                                     && do_base_chain
                                 {
-                                    println!("No good alignment found; primary-ref-chaining");
+                                    log::trace!("No good alignment found; primary-ref-chaining");
                                     let now = Instant::now();
                                     //Do base chaining if no good alignment is found
                                     let mut base_anc_score_strand_vec =
@@ -703,12 +695,10 @@ fn main() {
                                             read.len(),
                                         );
 
-                                    if time_stuff {
-                                        println!(
-                                            "primary-ref chaining time: {}",
-                                            now.elapsed().as_secs_f32()
-                                        );
-                                    }
+                                    log::trace!(
+                                        "primary-ref chaining time: {}",
+                                        now.elapsed().as_secs_f32()
+                                    );
 
                                     for (k, (best_anchors, _aln_score, read_strand)) in
                                         base_anc_score_strand_vec.iter().enumerate()
@@ -733,12 +723,10 @@ fn main() {
                                                 true,
                                             );
 
-                                        if time_stuff {
-                                            println!(
+                                            log::trace!(
                                                 "Path collection time: {}",
                                                 now.elapsed().as_secs_f32()
                                             );
-                                        }
 
                                         //TODO don't want to do clone every anchor list.
                                         for i in 0..best_colors.len() {
@@ -756,7 +744,7 @@ fn main() {
                                         }
                                     }
                                 } else {
-                                    println!("No good alignment found");
+                                    log::trace!("No good alignment found");
                                     do_align = false;
                                 }
                             }
@@ -790,12 +778,6 @@ fn main() {
                                         let vec = locked.entry(read_id.clone()).or_insert(vec![]);
                                         vec.push((ith_score, &chrom_names[chroms.len() - bit - 1]))
                                     }
-                                }
-                                if time_stuff {
-                                    println!(
-                                        "Align preprocess time {}",
-                                        now.elapsed().as_secs_f32()
-                                    );
                                 }
 
                                 let map_indices;
@@ -835,21 +817,22 @@ fn main() {
                                             &read_id,
                                         );
                                         let mut locked = bam_info_container.lock().unwrap();
+                                        let mut l2 = num_mapped_reads.lock().unwrap();
+                                        *l2 += 1;
+                                        if *l2 %  10000 == 0{
+                                            log::info!("{} mapped reads", *l2);
+                                        }
                                         locked.push(bam_info);
                                     }
                                 }
-                                if time_stuff {
-                                    println!("Total align time {}", now.elapsed().as_secs_f32());
-                                }
+                                    log::trace!("Total align time {}", now.elapsed().as_secs_f32());
                             }
                         }
-                        if time_stuff {
-                            println!(
+                            log::trace!(
                                 "Total time mapping read {} is {}",
                                 read_id,
                                 total_time.elapsed().as_secs_f32()
                             );
-                        }
                     });
                 for bam_info in bam_info_container.into_inner().unwrap() {
                     if !bam_info.is_none() {
@@ -861,13 +844,15 @@ fn main() {
                 bam_info_container = Mutex::new(vec![]);
             }
         }
-        for (read_id, hits) in best_hit_for_read.into_inner().unwrap() {
-            writeln!(&mut best_genomes_file, ">{}", &read_id).unwrap();
-            for hit in hits {
-                writeln!(&mut best_genomes_file, "{}\t{}", hit.1, hit.0).unwrap();
+        if !dont_output_stuff{
+            for (read_id, hits) in best_hit_for_read.into_inner().unwrap() {
+                writeln!(&mut best_genomes_file, ">{}", &read_id).unwrap();
+                for hit in hits {
+                    writeln!(&mut best_genomes_file, "{}\t{}", hit.1, hit.0).unwrap();
+                }
             }
         }
-        println!(
+        log::trace!(
             "Alignment took {} seconds",
             start_align.elapsed().as_secs_f32()
         );
