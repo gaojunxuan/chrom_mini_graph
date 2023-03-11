@@ -24,12 +24,13 @@ pub fn get_masked_kmers(
     fraction_mask_f64: f64,
     use_minimizers: bool,
     frequent_kmers: &FxHashMap<Kmer16, usize>,
+    circular: bool
 ) -> FxHashSet<Kmer16> {
     //Get the discarded k-mers here and don't use these k-mers when seeding
     let seeds1;
     if use_minimizers {
         let (seeds, _p1) =
-            minimizer_seeds(s, w, k, 100, &FxHashSet::default(), frequent_kmers, false);
+            minimizer_seeds(s, w, k, 100, &FxHashSet::default(), frequent_kmers, false, circular);
         seeds1 = seeds;
     } else {
         let (seeds, _p1) = 
@@ -67,6 +68,7 @@ pub fn minimizer_seeds(
     dont_use_kmers: &FxHashSet<Kmer16>,
     frequent_kmers: &FxHashMap<Kmer16, usize>,
     primary_reference: bool,
+    circular: bool,
 ) -> (Vec<KmerNode>, Vec<u32>) {
     let use_fnv = false;
     let mut minimizer_seeds: Vec<KmerNode> = vec![];
@@ -172,6 +174,7 @@ pub fn minimizer_seeds(
                 child_nodes: SmallVec::<[u32; 1]>::new(),
                 child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
                 //            child_nodes: vec![],
+                parent_nodes: SmallVec::<[u32; 1]>::new(),
                 canonical: canonical,
                 actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                 repetitive: sample_coord,
@@ -214,18 +217,26 @@ pub fn minimizer_seeds(
 
     for i in 0..minimizer_seeds.len() {
         if i == minimizer_seeds.len() - 1 {
-            minimizer_seeds[i].child_nodes.push(0 as u32);
-            //TODO this is incorrect -- why isthis incorrect??
-            let dist_on_genome = positions_selected[0] + s.len() as u32 - positions_selected[i];
-            minimizer_seeds[i]
-                .child_edge_distance
-                .push((dist_on_genome as u16, (1, 0)));
+            // are we assuming a circular genome? if so there should be an option to
+            // turn this off
+            if (circular) {
+                minimizer_seeds[i].child_nodes.push(0 as u32);
+                //TODO this is incorrect -- why isthis incorrect??
+                let dist_on_genome = positions_selected[0] + s.len() as u32 - positions_selected[i];
+                minimizer_seeds[i]
+                    .child_edge_distance
+                    .push((dist_on_genome as u16, (1, 0)));
+                if minimizer_seeds.len() != 0 {
+                    minimizer_seeds[0].parent_nodes.push(i as u32);
+                }
+            }
         } else {
             minimizer_seeds[i].child_nodes.push((i + 1) as u32);
             let dist_on_genome = positions_selected[i + 1] - positions_selected[i];
             minimizer_seeds[i]
                 .child_edge_distance
                 .push((dist_on_genome as u16, (1, 0)));
+            minimizer_seeds[i+1].parent_nodes.push(i as u32);
         }
     }
 
@@ -326,6 +337,7 @@ pub fn open_sync_seeds(
                         color: 1,
                         child_nodes: SmallVec::<[u32; 1]>::new(),
                         child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
+                        parent_nodes: SmallVec::<[u32; 1]>::new(),
                         canonical: canonical, //                    child_nodes: vec![],
                         actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                         repetitive: sample_coord,
@@ -376,6 +388,7 @@ pub fn open_sync_seeds(
                         color: 1,
                         child_nodes: SmallVec::<[u32; 1]>::new(),
                         child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
+                        parent_nodes: SmallVec::<[u32; 1]>::new(),
                         canonical: canonical, //                    child_nodes: vec![],
                         actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                         repetitive: false,
@@ -410,6 +423,7 @@ pub fn open_sync_seeds(
             syncmer_seeds[i]
                 .child_edge_distance
                 .push((dist_on_genome as u16, (1, 0)));
+            syncmer_seeds[i + 1].parent_nodes.push(i as u32);
         }
     }
 

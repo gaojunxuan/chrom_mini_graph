@@ -293,6 +293,7 @@ fn main() {
             fraction_mask_f64,
             use_minimizers,
             &frequent_kmers,
+            circular,
         );
         if use_minimizers {
             seed_p1 = seeding_methods_bit::minimizer_seeds(
@@ -303,6 +304,7 @@ fn main() {
                 &dont_use_kmers,
                 &frequent_kmers,
                 true,
+                circular,
             );
         } else {
             seed_p1 = seeding_methods_bit::open_sync_seeds(
@@ -346,6 +348,7 @@ fn main() {
                     &dont_use_kmers,
                     &frequent_kmers,
                     false,
+                    circular,
                 );
             } else {
                 s2 = seeding_methods_bit::open_sync_seeds(
@@ -522,6 +525,12 @@ fn main() {
                 write!(&mut file, "{}", towrite).unwrap();
             }
         }
+        // save topological ordering to csv
+        let mut file = File::create("topo_order.csv").unwrap();
+        for node in seeds1.iter() {
+            let towrite = format!("{},{}\n", node.id, node.order_val);
+            write!(&mut file, "{}", towrite).unwrap();
+        }
     } else {
         let num_t_str = matches_subc.value_of("threads").unwrap_or("10");
         let num_t = match num_t_str.parse::<usize>() {
@@ -606,6 +615,7 @@ fn main() {
                                 &FxHashSet::default(),
                                 &frequent_kmers,
                                 false,
+                                circular
                             );
                         } else {
                             s2 = seeding_methods_bit::open_sync_seeds(

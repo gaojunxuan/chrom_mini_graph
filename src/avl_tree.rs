@@ -396,7 +396,6 @@ where
             dbg!(&self.root);
         }
         while let Some(index) = current_index {
-            //                        dbg!(&self.nodes[self.root.unwrap()]);
             if left > self.nodes[index].value && right > self.nodes[index].value {
                 current_index = self.nodes[index].right_child;
             } else if left < self.nodes[index].value && right < self.nodes[index].value {
@@ -463,7 +462,6 @@ where
                     let rc_node = &self.nodes[rc];
                     if let Some(small_ind) = rc_node.smallest_child_index {
                         let rc_point_node = &self.nodes[small_ind];
-                        //                    dbg!(&rc_node);
                         if rc_node.value > right || rc_point_node.value > right {
                             dbg!(&right, &left, rc_point_node, curr_node);
                             dbg!(&self.nodes[curr_node.left_child.unwrap()]);
@@ -489,9 +487,6 @@ where
                         //This means that left is the root, so the initial left index was the index
                         //of the root.
                         if right_child_node_pointer.value > right {
-//                            dbg!(&right, &left, right_child_node_pointer, curr_node);
-//                            dbg!(&self.nodes[curr_node.left_child.unwrap()]);
-//                            dbg!(&self.nodes[curr_node.right_child.unwrap()]);
                             break;
                         }
                         v_p.push((

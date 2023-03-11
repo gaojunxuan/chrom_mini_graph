@@ -235,7 +235,6 @@ pub fn top_sort(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
             }
         }
     }
-
     let mut running_dist_opt = 0 as u32;
     for (i, (id, dist_opt)) in rev_sort_list.iter().rev().enumerate() {
         ref_nodes[(*id) as usize].order = i as u32;
@@ -250,6 +249,80 @@ pub fn top_sort(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
 
     return order_to_id;
 }
+
+/**
+ * Topological sort using Kahn's algorithm
+ */
+pub fn top_sort_kahns(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
+    let mut nodes_to_visit: Vec<(u32, u16)> = vec![];
+    // calculate average edge distance from the 0 node
+    let mut avg_dist = 0;
+    let mut num_edges = 0;
+    for (dist, (_color, index)) in ref_nodes[0].child_edge_distance.iter() {
+        num_edges += 1;
+        avg_dist += dist;
+    }
+    if num_edges > 0 {
+        avg_dist /= num_edges;
+    }
+    nodes_to_visit.push((0, avg_dist));
+    let mut visited = FxHashSet::default();
+    let mut visited_edges: HashSet<(u32, u32)> = HashSet::new();
+    let mut sorted_nodes = vec![];
+
+    // // compute in-degree (number of incoming edges) for each vertex
+    // let mut in_degree: Vec<u32> = vec![0; ref_nodes.len()];
+    // for node in ref_nodes.iter() {
+    //     for child_id in node.child_nodes.iter() {
+    //         in_degree[*child_id as usize] += 1;
+    //     }
+    // }
+    let mut in_degree: Vec<u32> = vec![0; ref_nodes.len()];
+    for node in ref_nodes.iter() {
+        // indegree
+        in_degree[node.id as usize] = node.parent_nodes.len() as u32;
+    }
+    
+    while nodes_to_visit.len() != 0 {
+        let node_dist_pair = nodes_to_visit.pop().unwrap();
+        let node = node_dist_pair.0;
+        let dist = node_dist_pair.1;
+        if visited.contains(&node) {
+            continue;
+        }
+        visited.insert(node);
+        sorted_nodes.push(node_dist_pair);
+        for child in ref_nodes[node as usize].child_nodes.iter().enumerate() {
+            let child_id = *child.1;
+            if visited_edges.contains(&(node, child_id)) {
+                continue;
+            }
+            in_degree[child_id as usize] -= 1;
+            visited_edges.insert((node, child_id));
+            if in_degree[child_id as usize] == 0 {
+                let dist_to_child = ref_nodes[node as usize]
+                    .child_edge_distance
+                    .iter()
+                    .find(|(_dist, (_color, index))| *index == child.0 as u8)
+                    .unwrap()
+                    .0;
+                nodes_to_visit.push((child_id, dist_to_child));
+            }
+        }
+    }
+
+    let mut order_to_id = vec![];
+    let mut running_dist_opt = 0;
+    for (i, (id, _dist)) in sorted_nodes.iter().enumerate() {
+        ref_nodes[(*id) as usize].order = i as u32;
+        ref_nodes[(*id) as usize].order_val = running_dist_opt as u32;
+        order_to_id.push(*id);
+        running_dist_opt += *_dist as u32;
+    }
+    return order_to_id;
+
+}
+
 
 pub fn add_align_to_graph(
     ref_nodes: &mut Vec<KmerNode>,
@@ -425,6 +498,7 @@ pub fn add_align_to_graph(
                     kmer: strand_aln_nodes[i as usize].kmer,
                     child_nodes: SmallVec::<[u32; 1]>::new(),
                     child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
+                    parent_nodes: SmallVec::<[u32; 1]>::new(),
                     color: 1,
                     //xnor hack. truth table is
                     //11 1
@@ -460,11 +534,13 @@ pub fn add_align_to_graph(
                     genome_dist_query.0,
                     (1, (parent_node.child_nodes.len() - 1) as u8),
                 ));
+                new_kmer_node.parent_nodes.push(parent_node.id);
                 new_nodes.push(new_kmer_node);
                 nn_len += 1;
                 parent_node = &mut new_nodes[nn_len - 1];
             }
             parent_node.child_nodes.push(kmer2r.id);
+            kmer2r.parent_nodes.push(parent_node.id);
             let genome_dist_query;
             if forward_strand {
                 if kmer2q.order == 0 {
@@ -640,4 +716,62 @@ pub fn get_closest_node(ref_nodes: &Vec<KmerNode>) -> Vec<Option<u32>> {
         ref_nodes.len()
     );
     return closest_nodes;
+}
+
+/*
+Pseudo code for finding Super- and Simple-Bubbles
+for node s in nodes:
+    push s in S
+    for direction in s:  # which direction to look for children
+        while len(s) > 0:
+            pop arbitrary v from S
+            v.visited = True
+            if v has no children in direction:
+                break
+            for u in v's children in direction:
+                u_parents = parents from where v connects to u
+                if u == s:
+                    break
+                u.seen = True
+                if all of u_parents are visited:
+                    push u into S
+            if len(S) == 1 (contains t):
+                and no edge between t and s:
+                    return t
+                else
+                    break
+ */
+
+/*
+ * Find bubbles with a given source in the graph
+ */
+pub fn find_bubbles_given_src(ref_nodes: &mut Vec<KmerNode>, src: &KmerNode) {
+    let mut seen: HashSet<u32> = FxHashSet::default();
+    let mut visited: HashSet<u32> = FxHashSet::default();
+    let mut nodes_inside_bubble: Vector<u32> = Vec::new();
+    let mut stack: Vector<u32> = Vec::new();
+    stack.push(src.id);
+    seen.insert(src.id);
+    while !stack.is_empty() {
+        let node_id = stack.pop();
+        visited.insert(node_id);
+        let node = &ref_nodes[node_id as usize];
+        if node.child_nodes {
+            break;
+        }
+        for child in node.child_nodes.iter() {
+            let child_node = &ref_nodes[*child as usize];
+            if child_node.id == src.id {
+                break;
+            }
+            if !seen.contains(&child_node.id) {
+                seen.insert(child_node.id);
+            }
+            // TODO we don't have a back pointer to parents
+        }
+    }
+}
+
+pub fn find_bubbles(ref_nodes: &mut Vec<KmerNode>) {
+
 }

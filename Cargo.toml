@@ -13,8 +13,9 @@ fxhash = "*"
 debruijn = "*"
 disjoint-sets = "*"
 smallvec = { version = "*", features = ["union","serde"] }
+# block-aligner = { version = "^0.2.0", features = ["simd_avx2"] }
 block-aligner = { version = "^0.2.0", features = ["simd_avx2"] }
-libwfa = "0.1"
+# libwfa = "*"
 serde = "*"
 serde_json = "1.0"
 clap = "*"

@@ -625,7 +625,7 @@ pub fn align_from_chain(
     let block_align = true;
 
     //ALIGNMENT
-    if block_align {
+    // if block_align {
         let now = Instant::now();
         let block_size = 512;
         //        let block_size = 64;
@@ -692,110 +692,111 @@ pub fn align_from_chain(
     //        );
     //
     //        writer.write(&bam_rec).unwrap();
-    } else {
-        //Testing out WFA alignment. Seems to be worse than blockaligner.
-        use libwfa::{affine_wavefront::*, bindings::*, mm_allocator::*, penalties::*};
+    // } 
+    // else {
+    //     //Testing out WFA alignment. Seems to be worse than blockaligner.
+    //     use libwfa::{affine_wavefront::*, bindings::*, mm_allocator::*, penalties::*};
 
-        let alloc = MMAllocator::new(BUFFER_SIZE_1G as u64);
-        let min_wavefront_length = 10;
-        let max_distance_threshold = 50;
+    //     let alloc = MMAllocator::new(BUFFER_SIZE_1G as u64);
+    //     let min_wavefront_length = 10;
+    //     let max_distance_threshold = 50;
 
-        let pattern = ref_map_string.to_string();
-        let text = read_map_string.to_string();
+    //     let pattern = ref_map_string.to_string();
+    //     let text = read_map_string.to_string();
 
-        let mut penalties = AffinePenalties {
-            match_: 0,
-            mismatch: 4,
-            gap_opening: 6,
-            gap_extension: 2,
-        };
+    //     let mut penalties = AffinePenalties {
+    //         match_: 0,
+    //         mismatch: 4,
+    //         gap_opening: 6,
+    //         gap_extension: 2,
+    //     };
 
-        let pat_len = pattern.as_bytes().len();
-        let text_len = text.as_bytes().len();
+    //     let pat_len = pattern.as_bytes().len();
+    //     let text_len = text.as_bytes().len();
 
-        let mut wavefronts = AffineWavefronts::new_reduced(
-            pat_len,
-            text_len,
-            &mut penalties,
-            min_wavefront_length,
-            max_distance_threshold,
-            &alloc,
-        );
+    //     let mut wavefronts = AffineWavefronts::new_reduced(
+    //         pat_len,
+    //         text_len,
+    //         &mut penalties,
+    //         min_wavefront_length,
+    //         max_distance_threshold,
+    //         &alloc,
+    //     );
 
-        wavefronts
-            .align(pattern.as_bytes(), text.as_bytes())
-            .unwrap();
+    //     wavefronts
+    //         .align(pattern.as_bytes(), text.as_bytes())
+    //         .unwrap();
 
-        let score = wavefronts.edit_cigar_score(&mut penalties);
+    //     let score = wavefronts.edit_cigar_score(&mut penalties);
 
-        println!("score: {}", score);
+    //     println!("score: {}", score);
 
-        // The cigar can also be extracted as a byte vector
-        let cigar = wavefronts.cigar_bytes_raw();
-        let cg_str = std::str::from_utf8(&cigar).unwrap();
+    //     // The cigar can also be extracted as a byte vector
+    //     let cigar = wavefronts.cigar_bytes_raw();
+    //     let cg_str = std::str::from_utf8(&cigar).unwrap();
 
-        let mut op_vec = vec![];
-        let mut prev_char = 'A';
-        let mut running_len = 0;
-        for c in cg_str.chars() {
-            if c != prev_char && running_len != 0 {
-                let op;
-                if prev_char == 'X' {
-                    op = Operation::M;
-                } else if prev_char == 'M' {
-                    op = Operation::M;
-                } else if prev_char == 'I' {
-                    op = Operation::I;
-                } else if prev_char == 'D' {
-                    op = Operation::D;
-                } else {
-                    panic!("{}\n{}", prev_char, cg_str);
-                    op = Operation::Sentinel;
-                }
+    //     let mut op_vec = vec![];
+    //     let mut prev_char = 'A';
+    //     let mut running_len = 0;
+    //     for c in cg_str.chars() {
+    //         if c != prev_char && running_len != 0 {
+    //             let op;
+    //             if prev_char == 'X' {
+    //                 op = Operation::M;
+    //             } else if prev_char == 'M' {
+    //                 op = Operation::M;
+    //             } else if prev_char == 'I' {
+    //                 op = Operation::I;
+    //             } else if prev_char == 'D' {
+    //                 op = Operation::D;
+    //             } else {
+    //                 panic!("{}\n{}", prev_char, cg_str);
+    //                 op = Operation::Sentinel;
+    //             }
 
-                op_vec.push(OpLen {
-                    op: op,
-                    len: running_len,
-                });
-                running_len = 0;
-                prev_char = c;
-            }
-            running_len += 1;
-            prev_char = c;
-        }
-        let op;
-        if prev_char == 'X' {
-            op = Operation::M;
-        } else if prev_char == 'M' {
-            op = Operation::M;
-        } else if prev_char == 'I' {
-            op = Operation::I;
-        } else if prev_char == 'D' {
-            op = Operation::D;
-        } else {
-            panic!("{}\n{}", prev_char, cg_str);
-        }
-        op_vec.push(OpLen {
-            op: op,
-            len: running_len,
-        });
+    //             op_vec.push(OpLen {
+    //                 op: op,
+    //                 len: running_len,
+    //             });
+    //             running_len = 0;
+    //             prev_char = c;
+    //         }
+    //         running_len += 1;
+    //         prev_char = c;
+    //     }
+    //     let op;
+    //     if prev_char == 'X' {
+    //         op = Operation::M;
+    //     } else if prev_char == 'M' {
+    //         op = Operation::M;
+    //     } else if prev_char == 'I' {
+    //         op = Operation::I;
+    //     } else if prev_char == 'D' {
+    //         op = Operation::D;
+    //     } else {
+    //         panic!("{}\n{}", prev_char, cg_str);
+    //     }
+    //     op_vec.push(OpLen {
+    //         op: op,
+    //         len: running_len,
+    //     });
 
-        let ref_chrom_name = &chrom_names[chroms.len() - align::get_first_nonzero_bit(color) - 1];
-        println!("cigar_str: {}", cg_str);
-        let bam_info = BamInfo {
-            cigar: op_vec,
-            sequence: read_map_string,
-            quals: qual_map_string,
-            qname: read_id.clone(),
-            strand: read_strand,
-            ref_name: ref_chrom_name.clone(),
-            map_pos: start_pos_chrom,
-            mapq: 60,
-        };
+    //     let ref_chrom_name = &chrom_names[chroms.len() - align::get_first_nonzero_bit(color) - 1];
+    //     println!("cigar_str: {}", cg_str);
+    //     let bam_info = BamInfo {
+    //         cigar: op_vec,
+    //         sequence: read_map_string,
+    //         quals: qual_map_string,
+    //         qname: read_id.clone(),
+    //         strand: read_strand,
+    //         ref_name: ref_chrom_name.clone(),
+    //         map_pos: start_pos_chrom,
+    //         mapq: 60,
+    //     };
 
-        println!("Read align time: {}", now.elapsed().as_secs_f32());
-        return Some(bam_info);
-    }
+    //     println!("Read align time: {}", now.elapsed().as_secs_f32());
+    //     return Some(bam_info);
+    // }
 }
 
 fn reverse_comp_04(a: u8) -> u8 {
