@@ -1,4 +1,6 @@
 use bincode;
+use clap::ArgAction;
+use clap::ArgMatches;
 use simple_logger::SimpleLogger;
 use log::LevelFilter;
 use bio::io::{fasta, fastq};
@@ -12,7 +14,7 @@ use chrom_mini_graph::data_structs::KmerNode;
 //use chrom_mini_graph::deconvolution;
 use chrom_mini_graph::graph_utils;
 use chrom_mini_graph::seeding_methods_bit;
-use clap::{App, AppSettings, Arg, SubCommand};
+use clap::{Arg, Command};
 use debruijn::dna_string::*;
 use debruijn::kmer::Kmer16;
 use debruijn::Kmer;
@@ -25,156 +27,167 @@ use std::io::{BufReader, BufWriter};
 use std::mem;
 use std::sync::Mutex;
 use std::time::Instant;
+use std::string::String;
 
 fn main() {
-    let matches = App::new("meta-cmg")
-        .setting(AppSettings::ArgRequiredElseHelp)
+    let matches = Command::new("meta-cmg")
+        .arg_required_else_help(true)
         .version("0.1")
         .about("Chromatic minimizer pangenome graph program.")
         .subcommand(
-            SubCommand::with_name("generate")
+            Command::new("generate")
                 .about("Generate graph.")
                 .version("0.1")
                 .arg(
-                    Arg::with_name("references")
+                    Arg::new("references")
                         .index(1)
                         .help("Input reference fasta files. Any sequence within every reference is assumed to be homologous with one another.")
-                        .takes_value(true)
                         .required(true)
-                        .multiple(true),
+                        .action(ArgAction::Append),
                 ).
                 arg(
-                    Arg::with_name("output")
-                        .short("o")
+                    Arg::new("output")
+                        .short('o')
+                        .default_value("serialized_mini_graph")
                         .help("Name of output chromatic reference graph. Produces a .json and .bin file. (Default: serialized_mini_graph)")
-                        .takes_value(true),
                 ).
                 arg(
-                    Arg::with_name("syncmer")
-                        .short("s")
+                    Arg::new("syncmer")
+                        .short('s')
                         .help("Use syncmers. (Default: use minimizers)")
+                        .action(ArgAction::SetTrue)
                 ).
                 arg(
-                    Arg::with_name("circular")
-                        .short("c")
+                    Arg::new("circular")
+                        .short('c')
                         .help("Assume that the genomes are circular. (Default: not circular)")
+                        .action(ArgAction::SetTrue)
                 ).
                 arg(
-                    Arg::with_name("mask")
-                        .short("m")
+                    Arg::new("mask")
+                        .short('m')
+                        .default_value("0.0002")
                         .help("Mask fraction of k-mers (Default: top 0.0002 of repetitive k-mers)")
-                        .takes_value(true)
                 ).
                 arg(
-                    Arg::with_name("samp_freq")
-                        .short("f")
+                    Arg::new("samp_freq")
+                        .short('f')
+                        .default_value("30")
                         .help("Graph sampling frequency for strain detect. (Default: 30)")
-                        .takes_value(true)
                 ).
                 arg(
-                    Arg::with_name("minimizer_weighting")
-                        .short("r")
+                    Arg::new("minimizer_weighting")
+                        .short('r')
                         .help("marbl minimizer weighting file for k = 16. (Default: none)")
-                        .takes_value(true)
                 ).
                 arg(
-                    Arg::with_name("w")
-                        .short("w")
+                    Arg::new("w")
+                        .short('w')
+                        .default_value("16")
                         .help("w value (testing).")
-                        .takes_value(true)
-                        .hidden(true)
+                        .hide(true)
+                ).
+                arg(
+                    Arg::new("h")
+                        .short('H')
+                        .default_value("50")
+                        .help("h value (testing).")
+                        .hide(true)
                 )
         )
         .subcommand(
-            SubCommand::with_name("map")
+            clap::Command::new("map")
                 .about("Map sequences onto graph.")
                 .version("0.1")
                 .arg(
-                    Arg::with_name("reference_graph")
+                    Arg::new("reference_graph")
                         .required(true)
                         .index(1)
                         .help("Reference graph (.bin) output from the generate subcommand. E.g. serialized_mini_graph.bin"),
                 ).
                 arg(
-                    Arg::with_name("reads")
+                    Arg::new("reads")
                         .required(true)
                         .index(2)
                         .help("Reads to map to graph. Only support fastq right now."),
                 ).
-                arg(Arg::with_name("threads")
-                  .short("t")
+                arg(Arg::new("threads")
+                  .short('t')
+                  .default_value("10")
                   .help("Number of threads to use. (default: 10).")
                   .value_name("INT")
-                  .takes_value(true)
                 ).
                 arg(
-                    Arg::with_name("syncmer")
-                        .short("s")
+                    Arg::new("syncmer")
+                        .short('s')
                         .help("Use syncmers. (Default: use minimizers)")
+                        .action(ArgAction::SetTrue)
                 ).
                 arg(
-                    Arg::with_name("chain_heuristic")
-                        .short("d")
+                    Arg::new("chain_heuristic")
+                        .short('d')
                         .help("Use linearization heuristic instead of DAG-aware heuristic. (Default: use chain heuristic)")
+                        .action(ArgAction::SetTrue)
                 ).
                 arg(
-                    Arg::with_name("dont_output_stuff")
-                        .short("u")
+                    Arg::new("dont_output_stuff")
+                        .short('u')
                         .help("Output auxillary info (Default: on)")
+                        .action(ArgAction::SetTrue)
                 ).
                 arg(
-                    Arg::with_name("align")
-                        .short("a")
+                    Arg::new("align")
+                        .short('a')
                         .help("Output alignment in BAM format (Default: no alignment)")
+                        .action(ArgAction::SetTrue)
                 ).
                 arg(
-                    Arg::with_name("bam_name")
-                        .short("b")
+                    Arg::new("bam_name")
+                        .short('b')
+                        .default_value("output.bam")
                         .help("Name of output bam file. (Default: output.bam)")
-                        .takes_value(true),
                 ).
                 arg(
-                    Arg::with_name("short_reads")
-                        .short("x")
+                    Arg::new("short_reads")
+                        .short('x')
                         .help("Short read parameters. (Default: Long read params.)")
-                        .hidden(true)
+                        .hide(true)
                 ).
                 arg(
-                    Arg::with_name("penalty")
-                        .short("p")
+                    Arg::new("penalty")
+                        .short('p')
                         .help("Short read parameters. (Default: Long read params.)")
-                        .takes_value(true)
-                        .hidden(true)
+                        .hide(true)
                 ).
                 arg(
-                    Arg::with_name("minimizer_weighting")
-                        .short("r")
+                    Arg::new("minimizer_weighting")
+                        .short('r')
                         .help("marbl minimizer weighting file for k = 16. (Default: none)")
-                        .takes_value(true)
                 ).
                 arg(
-                    Arg::with_name("h")
-                        .short("h")
+                    Arg::new("h")
+                        .short('H')
+                        .default_value("50")
                         .help("h value (testing).")
-                        .takes_value(true)
-                        .hidden(true)
+                        .hide(true)
                 ).
                 arg(
-                    Arg::with_name("w")
-                        .short("w")
+                    Arg::new("w")
+                        .short('w')
+                        .default_value("16")
                         .help("Value of w for minimizer window size. (Default: 16)")
-                        .takes_value(true)
                 ).
                 arg(
-                    Arg::with_name("trace")
+                    Arg::new("trace")
                         .long("trace")
+                        .action(ArgAction::SetTrue)
                         .help("Output debug information for tracing.")
                 )
         )
         .get_matches();
 
     let generate;
-    let matches_subc;
+    let matches_subc: &ArgMatches;
     if let Some(matches) = matches.subcommand_matches("generate") {
         generate = true;
         matches_subc = matches;
@@ -184,14 +197,14 @@ fn main() {
     }
 
     let circular;
-    if matches_subc.is_present("circular") {
+    if matches_subc.try_contains_id("circular").is_ok() && matches_subc.get_flag("circular") {
         circular = true;
     } else {
         circular = false;
     }
 
     let align;
-    if matches_subc.is_present("align") {
+    if matches_subc.try_contains_id("align").is_ok() && matches_subc.get_flag("align") {
         align = true;
     } else {
         align = false;
@@ -200,46 +213,52 @@ fn main() {
     let k = 16;
     let s = 8;
     let t = (k - s + 2) / 2 as usize;
-    //    let samp_freq = 30;
+
     let samp_freq = matches_subc
-        .value_of("samp_freq")
-        .unwrap_or("30")
+        .get_one::<String>("samp_freq")
+        .unwrap()
+        .as_str()
         .parse::<usize>()
         .unwrap();
-    //use syncmers if not using minimizers
 
+    // use syncmers if not using minimizers
     let use_minimizers;
-    if matches_subc.is_present("syncmer") {
+    if matches_subc.get_flag("syncmer") {
         use_minimizers = false;
     } else {
         use_minimizers = true;
     }
 
 
-    if matches_subc.is_present("trace"){
+    if matches_subc.try_contains_id("trace").is_ok() && matches_subc.get_flag("trace") {
         SimpleLogger::new().with_level(LevelFilter::Trace).env().init().unwrap();
     }
     else{
         SimpleLogger::new().with_level(LevelFilter::Debug).env().init().unwrap();
     }
+
     let chain_heuristic;
-    if matches_subc.is_present("chain_heuristic") {
+    if matches_subc.try_contains_id("chain_heuristic").is_ok() && matches_subc.get_flag("chain_heuristic") {
         chain_heuristic = false;
     } else {
         chain_heuristic = true;
     }
+    
     let h = matches_subc
-        .value_of("h")
-        .unwrap_or("50")
-        .parse::<usize>()
-        .unwrap();
-    let w = matches_subc
-        .value_of("w")
-        .unwrap_or("16")
+        .get_one::<String>("h")
+        .unwrap()
+        .as_str()
         .parse::<usize>()
         .unwrap();
 
-    let minimizer_weight_file = matches_subc.value_of("minimizer_weighting");
+    let w = matches_subc
+        .get_one::<String>("w")
+        .unwrap()
+        .as_str()
+        .parse::<usize>()
+        .unwrap();
+
+    let minimizer_weight_file = matches_subc.get_one::<String>("minimizer_weighting");
     let frequent_kmers;
     if let Some(file_str) = minimizer_weight_file {
         frequent_kmers = seeding_methods_bit::read_minimizer_count_file(file_str);
@@ -248,10 +267,10 @@ fn main() {
     }
 
     if generate {
-        let fraction_mask = matches_subc.value_of("mask").unwrap_or("0.0002");
+        let fraction_mask = matches_subc.get_one::<String>("mask").unwrap().as_str();
         let fraction_mask_f64: f64 = fraction_mask.parse().unwrap();
 
-        let ref_genomes: Vec<&str> = matches_subc.values_of("references").unwrap().collect();
+        let ref_genomes: Vec<&str> = matches_subc.get_many::<String>("references").unwrap().map(|x| x.as_str()).collect();
         let mut chroms = vec![];
         let mut good_chroms = vec![];
         let mut chrom_names = vec![];
@@ -293,8 +312,18 @@ fn main() {
             fraction_mask_f64,
             use_minimizers,
             &frequent_kmers,
-            circular,
         );
+        println!("----------------------------------------");
+        println!("w = {}, k = {}, s = {}, t = {}", w, k, s, t);
+        println!("Sample frequency: {}", samp_freq);
+        println!("Fraction of masked kmers: {}", fraction_mask);
+        println!("Use minimizers: {}", use_minimizers);
+        println!("Use syncmers: {}", !use_minimizers);
+        println!("Circular genome: {}", circular);
+        println!("h value: {}", h);
+        println!("Number of chromosomes: {}", chroms.len());
+        println!("Number of masked kmers: {}", dont_use_kmers.len());
+        println!("----------------------------------------");
         if use_minimizers {
             seed_p1 = seeding_methods_bit::minimizer_seeds(
                 &chroms[0].0,
@@ -304,7 +333,6 @@ fn main() {
                 &dont_use_kmers,
                 &frequent_kmers,
                 true,
-                circular,
             );
         } else {
             seed_p1 = seeding_methods_bit::open_sync_seeds(
@@ -329,7 +357,7 @@ fn main() {
 
         let mut aln_score_array = vec![];
         let mut mean_score = 0.0;
-        graph_utils::top_sort(&mut seeds1);
+        graph_utils::top_sort_kahns(&mut seeds1);
 
         for i in 1..chroms.len() {
             let old_graph_len = seeds1.len();
@@ -348,7 +376,6 @@ fn main() {
                     &dont_use_kmers,
                     &frequent_kmers,
                     false,
-                    circular,
                 );
             } else {
                 s2 = seeding_methods_bit::open_sync_seeds(
@@ -494,8 +521,9 @@ fn main() {
 
         // Print, write to a file, or send to an HTTP server.
         let serial_name = matches_subc
-            .value_of("output")
-            .unwrap_or("serialized_mini_graph");
+            .get_one::<String>("output")
+            .unwrap()
+            .as_str();
         let serial_json_name = format!("{}.json", serial_name);
         let serial_bin_name = format!("{}.bin", serial_name);
 
@@ -532,7 +560,7 @@ fn main() {
             write!(&mut file, "{}", towrite).unwrap();
         }
     } else {
-        let num_t_str = matches_subc.value_of("threads").unwrap_or("10");
+        let num_t_str = matches_subc.get_one::<String>("threads").unwrap();
         let num_t = match num_t_str.parse::<usize>() {
             Ok(num_t) => num_t,
             Err(_) => panic!("Number of threads must be positive integer"),
@@ -542,10 +570,10 @@ fn main() {
             .build_global()
             .unwrap();
 
-        let dont_output_stuff = matches_subc.is_present("dont_output_stuff");
-        let short_reads = matches_subc.is_present("short_reads");
-        let ref_graph_file = matches_subc.value_of("reference_graph").unwrap();
-        let bam_name = matches_subc.value_of("bam_name").unwrap_or("output.bam");
+        let dont_output_stuff = matches_subc.get_flag("dont_output_stuff");
+        let short_reads = matches_subc.get_flag("short_reads");
+        let ref_graph_file = matches_subc.get_one::<String>("reference_graph").unwrap().as_str();
+        let bam_name = matches_subc.get_one::<String>("bam_name").unwrap().as_str();
 
         let ref_graph_f = File::open(ref_graph_file).unwrap();
         let ref_graph_reader = BufReader::new(ref_graph_f);
@@ -558,7 +586,7 @@ fn main() {
         ) = bincode::deserialize_from(ref_graph_reader).unwrap();
 
         let order_to_id = graph_utils::top_sort(&mut ref_graph);
-        let reads_file = matches_subc.value_of("reads").unwrap();
+        let reads_file = matches_subc.get_one::<String>("reads").unwrap().as_str();
         let reader = fastq::Reader::from_file(reads_file);
 
         let ref_hash_map = chain::get_kmer_dict(&ref_graph);
@@ -615,7 +643,6 @@ fn main() {
                                 &FxHashSet::default(),
                                 &frequent_kmers,
                                 false,
-                                circular
                             );
                         } else {
                             s2 = seeding_methods_bit::open_sync_seeds(

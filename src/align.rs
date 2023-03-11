@@ -641,10 +641,12 @@ pub fn align_from_chain(
         };
 
         let nuc_mat: NucMatrix = NucMatrix::new_simple(1, -2);
-        let a = Block::<_, true, false>::align(&q, &r, &nuc_mat, gaps, block_size..=block_size, 50);
+        let mut a = Block::<true, false>::new(q.len(), r.len(), block_size);
+        a.align(&q, &r, &nuc_mat, gaps, block_size..=block_size, 50);
 
         let res = a.res();
-        let cigar = a.trace().cigar(res.query_idx, res.reference_idx);
+        let mut cigar = Cigar::new(res.query_idx, res.reference_idx);
+        a.trace().cigar(res.query_idx, res.reference_idx, &mut cigar);
         //        let fmt_string = cigar.format(&q_cpy.as_bytes(), &r_cpy.as_bytes());
         //        println!("{}\n{}", fmt_string.0, fmt_string.1);
         //        println!("Aligning time: {}", now.elapsed().as_secs_f32());

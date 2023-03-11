@@ -17,6 +17,8 @@ pub fn print_as_binary(color: Color, string: String) {
     println!("{},{}", string, binary_color);
 }
 
+//                    let parent_color= format!("{:#08b}", parent_path_color);
+
 pub fn get_kmer_dict_mut(seeds: &mut Vec<KmerNode>) -> FxHashMap<Kmer16, Vec<u32>> {
     let mut mini_hash_map = FxHashMap::default();
     for (_i, kmer_node) in seeds.iter().enumerate() {
