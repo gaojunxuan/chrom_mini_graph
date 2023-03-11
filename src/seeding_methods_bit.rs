@@ -172,7 +172,7 @@ pub fn minimizer_seeds(
                 color: 1,
                 child_nodes: SmallVec::<[u32; 1]>::new(),
                 child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
-                //            child_nodes: vec![],
+                parent_nodes: SmallVec::<[u32; 1]>::new(),
                 canonical: canonical,
                 actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                 repetitive: sample_coord,
@@ -327,7 +327,8 @@ pub fn open_sync_seeds(
                         color: 1,
                         child_nodes: SmallVec::<[u32; 1]>::new(),
                         child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
-                        canonical: canonical, //                    child_nodes: vec![],
+                        parent_nodes: SmallVec::<[u32; 1]>::new(),
+                        canonical: canonical,
                         actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                         repetitive: sample_coord,
                         primary_base: Some(*positions_selected.last().unwrap() as u32),
@@ -364,7 +365,6 @@ pub fn open_sync_seeds(
                 let mut sample_coord = false;
                 if distance_from_last > 500 {
                     sample_coord = true;
-                    //            dbg!(distance_from_last);
                 }
 
                 if !dont_use_kmers.contains(&node_kmer) || (sample_coord && is_primary) {
@@ -377,7 +377,8 @@ pub fn open_sync_seeds(
                         color: 1,
                         child_nodes: SmallVec::<[u32; 1]>::new(),
                         child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
-                        canonical: canonical, //                    child_nodes: vec![],
+                        parent_nodes: SmallVec::<[u32; 1]>::new(),
+                        canonical: canonical,
                         actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                         repetitive: false,
                         primary_base: Some(*positions_selected.last().unwrap() as u32),

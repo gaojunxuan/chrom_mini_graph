@@ -7,6 +7,13 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::hash::Hash;
 
+/// Check if a iterator contains unique elements
+/// 
+/// # Arguments
+/// * `iter` - The iterator to check
+/// 
+/// # Returns
+/// * `bool` - True if all elements are unique
 fn has_unique_elements<T>(iter: T) -> bool
 where
     T: IntoIterator,
@@ -16,6 +23,22 @@ where
     iter.into_iter().all(move |x| uniq.insert(x))
 }
 
+/// Convert the graph into a simplified graph represented as
+/// a chain of bubbles. This is done by first collect all the
+/// starting of bubbles and running BFS to find the end of the
+/// bubble. An tuple is added to the return vector that represents
+/// the start and end of the bubble and the length of the bubble.
+/// Furthermore, each bubble is connected to the next bubble by
+/// an intermediate vertex.
+/// 
+/// # Arguments
+/// * `head` - The head of the graph
+/// * `ref_nodes` - The graph
+/// 
+/// # Returns
+/// * `Vec<(u32, u32, usize)>` - A vector of tuples that contains the edges in a chain of bubbles
+/// * `FxHashMap<u32, Vec<u32>>` - A map from vertices to the kmers that are represented by the vertex
+/// * `Vec<&'a KmerNode>` - A vector of the unitigs vertices
 pub fn concat_graph<'a>(
     head: &KmerNode,
     ref_nodes: &'a Vec<KmerNode>,
@@ -250,9 +273,15 @@ pub fn top_sort(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
     return order_to_id;
 }
 
-/**
- * Topological sort using Kahn's algorithm
- */
+/// Topological sort using Kahn's algorithm
+/// 
+/// # Arguments
+/// * `ref_nodes` - Vector of KmerNodes representing the graph to be sorted;
+/// the KmerNodes are modified in place to include a linearized coordinate
+/// for each node.
+/// 
+/// # Returns
+/// * `sorted_nodes` - Vector of node IDs in topological order
 pub fn top_sort_kahns(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
     let mut nodes_to_visit: Vec<(u32, u16)> = vec![];
     // calculate average edge distance from the 0 node
@@ -318,7 +347,15 @@ pub fn top_sort_kahns(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
 
 }
 
-
+/// Add the aligned nodes to the reference graph using the anchors
+/// 
+/// # Arguments
+/// * `ref_nodes`: reference graph
+/// * `aln_nodes`: aligned nodes
+/// * `anchors`: anchors between the reference and aligned nodes
+/// * `forward_strand`: whether the aligned nodes are on the forward strand
+/// * `samp_freq`: sampling frequency of the reference graph
+/// * `circular`: whether the reference graph is circular
 pub fn add_align_to_graph(
     ref_nodes: &mut Vec<KmerNode>,
     aln_nodes: Vec<KmerNode>,
@@ -403,10 +440,6 @@ pub fn add_align_to_graph(
         let kmer1rorder = kmer1r.order;
         kmer1r.color |= 1;
         kmer2r.color |= 1;
-
-        //        if kmer1r.id == 274529 || kmer2r.id == 274529{
-        //            dbg!(&kmer1r,&kmer2r,&kmer1q,&kmer2q);
-        //        }
 
         //        dbg!(anchors[i], anchors[i+1], &kmer1r, &kmer2r, &kmer1q, &kmer2q);
 
@@ -493,6 +526,7 @@ pub fn add_align_to_graph(
                     kmer: strand_aln_nodes[i as usize].kmer,
                     child_nodes: SmallVec::<[u32; 1]>::new(),
                     child_edge_distance: SmallVec::<[(u16, (Color, u8)); 1]>::new(),
+                    parent_nodes: SmallVec::<[u32; 1]>::new(),
                     color: 1,
                     //xnor hack. truth table is
                     //11 1
