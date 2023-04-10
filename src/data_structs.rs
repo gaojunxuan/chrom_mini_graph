@@ -28,8 +28,8 @@ pub struct Bubble {
     pub kmers: Vec<u32>,
     pub start: u32,
     pub end: u32,
-    pub longest_path_length: u32,
-    pub shortest_path_length: u32,
+    pub longest_path_length: Option<u32>,
+    pub shortest_path_length: Option<u32>,
     pub parent_bubble: Option<u32>
 }
 

@@ -148,7 +148,7 @@ pub fn get_super_chains(
         let cutoff = (0.35 * 0.9f64.powf(16.) * samp_freq as f64) as usize;
         if list_of_hits.len() > cutoff || true {
             let ref_pos = &seeds_ref[(*coord_node) as usize].actual_ref_positions;
-            let order = &seeds_ref[(*coord_node) as usize].order;
+            let order = seeds_ref[(*coord_node) as usize].order;
             let color = seeds_ref[(*coord_node) as usize].color;
             let list_color = align::get_nonzero_bits(color);
             let list_color: Vec<usize> = list_color.into_iter().rev().collect();
@@ -166,7 +166,7 @@ pub fn get_super_chains(
     let mut super_anchors = vec![];
     let mut col_list = FxHashMap::default();
     for (_i, (_order, col_pos, coord_node)) in debug.iter().enumerate() {
-        for (_pos, q_id, _ref_id) in super_nodes_map[coord_node].iter() {
+        for (_pos, q_id, _ref_id) in (super_nodes_map[*coord_node]).iter() {
             super_anchors.push((**coord_node, *q_id));
         }
         let mut list = vec![];
@@ -315,10 +315,10 @@ pub fn get_super_chains(
             ));
         }
         return best_superchain_ret;
-        return best_superchain
-            .iter_mut()
-            .map(|x| (mem::take(&mut x.0), x.3, forward_strand))
-            .collect();
+        // return best_superchain
+        //     .iter_mut()
+        //     .map(|x| (mem::take(&mut x.0), x.3, forward_strand))
+        //     .collect();
     }
 }
 

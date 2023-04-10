@@ -1,3 +1,4 @@
+use crate::data_structs::Bubble;
 use crate::data_structs::{Color, KmerNode};
 use fxhash::FxHashMap;
 use fxhash::FxHashSet;
@@ -287,14 +288,14 @@ pub fn top_sort_kahns(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
     // calculate average edge distance from the 0 node
     let mut avg_dist = 0;
     let mut num_edges = 0;
-    for (dist, (_color, index)) in ref_nodes[0].child_edge_distance.iter() {
+    for (dist, (_color, _index)) in ref_nodes[0].child_edge_distance.iter() {
         num_edges += 1;
         avg_dist += dist;
     }
     if num_edges > 0 {
         avg_dist /= num_edges;
     }
-    nodes_to_visit.push((0, avg_dist));
+    nodes_to_visit.push((0, 0));
     let mut visited = FxHashSet::default();
     let mut visited_edges: HashSet<(u32, u32)> = HashSet::new();
     let mut sorted_nodes = vec![];
@@ -305,12 +306,12 @@ pub fn top_sort_kahns(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
         for child_id in node.child_nodes.iter() {
             in_degree[*child_id as usize] += 1;
         }
+        // in_degree[node.id as usize] = node.parent_nodes.len() as u32;
     }
     
     while nodes_to_visit.len() != 0 {
-        let node_dist_pair = nodes_to_visit.pop().unwrap();
+        let node_dist_pair = nodes_to_visit.remove(0);
         let node = node_dist_pair.0;
-        let dist = node_dist_pair.1;
         if visited.contains(&node) {
             continue;
         }
@@ -338,10 +339,10 @@ pub fn top_sort_kahns(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
     let mut order_to_id = vec![];
     let mut running_dist_opt = 0;
     for (i, (id, _dist)) in sorted_nodes.iter().enumerate() {
+        running_dist_opt += *_dist as u32;
         ref_nodes[(*id) as usize].order = i as u32;
         ref_nodes[(*id) as usize].order_val = running_dist_opt as u32;
         order_to_id.push(*id);
-        running_dist_opt += *_dist as u32;
     }
     return order_to_id;
 
@@ -562,11 +563,13 @@ pub fn add_align_to_graph(
                     genome_dist_query.0,
                     (1, (parent_node.child_nodes.len() - 1) as u8),
                 ));
+                new_kmer_node.parent_nodes.push(parent_node.id);
                 new_nodes.push(new_kmer_node);
                 nn_len += 1;
                 parent_node = &mut new_nodes[nn_len - 1];
             }
             parent_node.child_nodes.push(kmer2r.id);
+            kmer2r.parent_nodes.push(parent_node.id);
             let genome_dist_query;
             if forward_strand {
                 if kmer2q.order == 0 {
@@ -742,4 +745,102 @@ pub fn get_closest_node(ref_nodes: &Vec<KmerNode>) -> Vec<Option<u32>> {
         ref_nodes.len()
     );
     return closest_nodes;
+}
+
+/// Find bubble given a source node
+/// 
+/// # Arguments
+/// * `ref_nodes` - Vector of KmerNodes representing the reference graph
+/// * `src` - Source node to start the search from
+/// 
+/// # Returns
+/// * `Option<Bubble>` - `Bubble` struct containing the nodes inside the bubble if a bubble is found
+pub fn find_bubbles_given_src(ref_nodes: &Vec<KmerNode>, src: &KmerNode) -> Option<Bubble> {
+    let mut seen = FxHashSet::default();
+    let mut visited = FxHashSet::default();
+    let mut nodes_inside_bubble: Vec<u32> = Vec::new();
+    let mut stack: Vec<u32> = Vec::new();
+    stack.push(src.id);
+    seen.insert(src.id);
+    while !stack.is_empty() {
+        let node_id = stack.pop();
+        if node_id.is_none() {
+            break;
+        }
+        let node_id = node_id.unwrap();
+        visited.insert(node_id);
+        nodes_inside_bubble.push(node_id);
+        // remove from seen
+        seen.remove(&node_id);
+        let node = &ref_nodes[node_id as usize];
+        if node.child_nodes.len() == 0 {
+            // tip
+            break;
+        }
+        for child in node.child_nodes.iter() {
+            let child_node = &ref_nodes[*child as usize];
+            if child_node.id == src.id {
+                // loop
+                break;
+            }
+            if !seen.contains(&child_node.id) {
+                seen.insert(child_node.id);
+            }
+            let parents = &child_node.parent_nodes;
+            // push u to stack if all parents are visited
+            if parents.iter().all(|p| visited.contains(p)) {
+                stack.push(child_node.id);
+            }
+        }
+        if stack.len() == 1 && seen.len() == 1 {
+            let t = stack.pop().unwrap();
+            nodes_inside_bubble.push(t);
+            // if no edge between t and s
+            if !ref_nodes[t as usize].child_nodes.contains(&src.id) && !ref_nodes[src.id as usize].child_nodes.contains(&t) {
+                let bubble = Bubble {
+                    id: 0,
+                    start: src.id,
+                    end: t,
+                    kmers: nodes_inside_bubble,
+                    longest_path_length: None,
+                    shortest_path_length: None,
+                    parent_bubble: None
+                };
+                // println!("Found bubble with src: {} and sink: {}", src.id, t);
+                return Some(bubble);
+            } else {
+                break;
+            }
+        }
+    }
+    return None;
+}
+
+/// Find bubbles in the reference graph
+/// 
+/// This algorithm is due to Onodera et al. (2016) and is described in the paper
+/// "Detecting superbubbles in assembly graphs".
+/// 
+/// The algorithm runs in O(mn) time.
+/// 
+/// # Arguments
+/// * `ref_nodes` - Vector of KmerNodes representing the reference graph
+/// 
+/// # Returns
+/// * `Vec<Bubble>` - Vector of `Bubble` structs containing the nodes inside the bubble
+pub fn find_bubbles(ref_nodes: &Vec<KmerNode>) -> Vec<Bubble> {
+    let mut bubbles: Vec<Bubble> = Vec::new();
+    let mut bubble_id = 0;
+    for node in ref_nodes.iter() {
+        if node.child_nodes.len() > 1 {
+            let bubble = find_bubbles_given_src(ref_nodes, node);
+            if !bubble.is_none() {
+                let mut bubble = bubble.unwrap();
+                bubble.id = bubble_id;
+                bubble_id += 1;
+                bubbles.push(bubble);
+            }
+        }
+    }
+    return bubbles;
 }

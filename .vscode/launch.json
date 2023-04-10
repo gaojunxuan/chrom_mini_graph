@@ -1,0 +1,36 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "cppdbg",
+            "miDebuggerPath": "gdb",
+            "request": "launch",
+            "name": "Debug Mapping",
+            // "cargo": {
+            //     "args": [
+            //         "build",
+            //     ]
+            // },
+            "program": "${workspaceFolder}/target/debug/chrom_mini_graph",
+            "args": ["map", "serialized_mini_graph.bin", "test_reads/hg_01243_pacbio_reads.fastq"],
+            "cwd": "${workspaceFolder}",
+        },
+        {
+            "type": "cppdbg",
+            "miDebuggerPath": "gdb",
+            "request": "launch",
+            "name": "Debug Generate",
+            // "cargo": {
+            //     "args": [
+            //         "build",
+            //     ]
+            // },
+            "program": "${workspaceFolder}/target/debug/chrom_mini_graph",
+            "args": ["generate", "${workspaceFolder}/test_refs/*"],
+            "cwd": "${workspaceFolder}",
+        }
+    ]
+}

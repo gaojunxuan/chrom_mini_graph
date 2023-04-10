@@ -25,7 +25,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::{BufReader, BufWriter};
 use std::mem;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use std::string::String;
 
@@ -151,6 +151,7 @@ fn main() {
                     Arg::new("short_reads")
                         .short('x')
                         .help("Short read parameters. (Default: Long read params.)")
+                        .action(ArgAction::SetTrue)
                         .hide(true)
                 ).
                 arg(
@@ -214,13 +215,6 @@ fn main() {
     let s = 8;
     let t = (k - s + 2) / 2 as usize;
 
-    let samp_freq = matches_subc
-        .get_one::<String>("samp_freq")
-        .unwrap()
-        .as_str()
-        .parse::<usize>()
-        .unwrap();
-
     // use syncmers if not using minimizers
     let use_minimizers;
     if matches_subc.get_flag("syncmer") {
@@ -270,6 +264,13 @@ fn main() {
         let fraction_mask = matches_subc.get_one::<String>("mask").unwrap().as_str();
         let fraction_mask_f64: f64 = fraction_mask.parse().unwrap();
 
+        let samp_freq = matches_subc
+            .get_one::<String>("samp_freq")
+            .unwrap()
+            .as_str()
+            .parse::<usize>()
+            .unwrap();
+
         let ref_genomes: Vec<&str> = matches_subc.get_many::<String>("references").unwrap().map(|x| x.as_str()).collect();
         let mut chroms = vec![];
         let mut good_chroms = vec![];
@@ -312,6 +313,7 @@ fn main() {
             fraction_mask_f64,
             use_minimizers,
             &frequent_kmers,
+            circular,
         );
         println!("----------------------------------------");
         println!("w = {}, k = {}, s = {}, t = {}", w, k, s, t);
@@ -333,6 +335,7 @@ fn main() {
                 &dont_use_kmers,
                 &frequent_kmers,
                 true,
+                circular
             );
         } else {
             seed_p1 = seeding_methods_bit::open_sync_seeds(
@@ -376,6 +379,7 @@ fn main() {
                     &dont_use_kmers,
                     &frequent_kmers,
                     false,
+                    circular
                 );
             } else {
                 s2 = seeding_methods_bit::open_sync_seeds(
@@ -483,7 +487,7 @@ fn main() {
                 seeds1.len() - old_graph_len
             );
 
-            graph_utils::top_sort(&mut seeds1);
+            graph_utils::top_sort_kahns(&mut seeds1);
             println!("Top sort time: {}.", now.elapsed().as_secs_f32());
         }
 
@@ -553,7 +557,11 @@ fn main() {
                 write!(&mut file, "{}", towrite).unwrap();
             }
         }
+        // compute bubbles
+        let mut bubbles = graph_utils::find_bubbles(&seeds1);
+        println!("Found {} bubbles", bubbles.len());
         // save topological ordering to csv
+        println!("Saving topological ordering to csv");
         let mut file = File::create("topo_order.csv").unwrap();
         for node in seeds1.iter() {
             let towrite = format!("{},{}\n", node.id, node.order_val);
@@ -585,12 +593,12 @@ fn main() {
             FxHashSet<Kmer16>,
         ) = bincode::deserialize_from(ref_graph_reader).unwrap();
 
-        let order_to_id = graph_utils::top_sort(&mut ref_graph);
+        let order_to_id = graph_utils::top_sort_kahns(&mut ref_graph);
         let reads_file = matches_subc.get_one::<String>("reads").unwrap().as_str();
         let reader = fastq::Reader::from_file(reads_file);
 
         let ref_hash_map = chain::get_kmer_dict(&ref_graph);
-        let mut anchor_file = BufWriter::new(File::create("read_anchor_hits.txt").unwrap());
+        let anchor_file = Arc::new(Mutex::new(BufWriter::new(File::create("read_anchor_hits.txt").unwrap())));
         let mut best_genomes_file = File::create("best_genome_reads.txt").unwrap();
         let (headerview, mut writer) =
             align::write_bam_header(&chroms, &chrom_names, bam_name.to_string());
@@ -643,6 +651,7 @@ fn main() {
                                 &FxHashSet::default(),
                                 &frequent_kmers,
                                 false,
+                                circular,
                             );
                         } else {
                             s2 = seeding_methods_bit::open_sync_seeds(
@@ -683,14 +692,10 @@ fn main() {
                             if *read_strand == false {
                                 for node in read_seeds.iter_mut() {
                                     node.order = qlen as u32 - node.order - 1;
-                                    //            for child_id in node.child_nodes.iter_mut(){
-                                    //                *child_id = q_len as u32 - *child_id - 1;
-                                    //            }
                                 }
                             }
                             let now = Instant::now();
 
-//                            let (best_colors, best_list_anchors) = chain::get_best_path_from_chain2(
                             let (best_colors, best_list_anchors) = chain::get_best_path_from_chain_rewrite(
                                 best_anchors,
                                 &ref_graph,
@@ -785,6 +790,7 @@ fn main() {
                                     do_align = false;
                                 }
                             }
+                            
                             if do_align {
                                 let now = Instant::now();
                                 use std::cmp::min;
@@ -862,14 +868,42 @@ fn main() {
                                         locked.push(bam_info);
                                     }
                                 }
-                                    log::trace!("Total align time {}", now.elapsed().as_secs_f32());
+                                log::trace!("Total align time {}", now.elapsed().as_secs_f32());
                             }
                         }
-                            log::trace!(
-                                "Total time mapping read {} is {}",
-                                read_id,
-                                total_time.elapsed().as_secs_f32()
-                            );
+                        log::trace!(
+                            "Total time mapping read {} is {}",
+                            read_id,
+                            total_time.elapsed().as_secs_f32()
+                        );
+                        if !dont_output_stuff {
+                            for (color, anchors_color_pair) in best_anchors_both_strands.iter().enumerate() {
+                                write!(
+                                    anchor_file.lock().unwrap(),
+                                    "{}:{}:",
+                                    read_id,
+                                    color
+                                )
+                                .unwrap();
+                                for anchor in &anchors_color_pair.0 {
+                                    if anchor == anchors_color_pair.0.last().unwrap() {
+                                        writeln!(
+                                            anchor_file.lock().unwrap(),
+                                            "{}\n",
+                                            anchor.0
+                                        )
+                                        .unwrap();
+                                    } else {
+                                        write!(
+                                            anchor_file.lock().unwrap(),
+                                            "{},",
+                                            anchor.0
+                                        )
+                                        .unwrap();
+                                    }
+                                }
+                            }
+                        }
                     });
                 for bam_info in bam_info_container.into_inner().unwrap() {
                     if !bam_info.is_none() {
