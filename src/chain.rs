@@ -9,6 +9,7 @@ use debruijn::Kmer;
 use fxhash::FxHashMap;
 use fxhash::FxHashSet;
 use smallvec::SmallVec;
+use core::num;
 use std::mem;
 use std::time::Instant;
 
@@ -16,8 +17,6 @@ pub fn print_as_binary(color: Color, string: String) {
     let binary_color = format!("{:#08b}", color);
     println!("{},{}", string, binary_color);
 }
-
-//                    let parent_color= format!("{:#08b}", parent_path_color);
 
 pub fn get_kmer_dict_mut(seeds: &mut Vec<KmerNode>) -> FxHashMap<Kmer16, Vec<u32>> {
     let mut mini_hash_map = FxHashMap::default();
@@ -77,7 +76,7 @@ fn heuristic_score(ref_order_dist: f64, query_order_dist: f64) -> f64 {
 
 fn get_chains<'a>(
     seeds_ref: &'a Vec<KmerNode>,
-    seeds_q: &'a mut Vec<KmerNode>,
+    seeds_query: &'a mut Vec<KmerNode>,
     h: usize,
     chain_heuristic: bool,
     chain_reads: bool,
@@ -85,11 +84,11 @@ fn get_chains<'a>(
     forward_strand: bool,
     anchors: &mut Vec<(u32, u32)>,
 ) -> Vec<(Anchors, f64)> {
-    let q_len = seeds_q.len();
-    let order_val_last = seeds_q[q_len - 1].order_val;
+    let q_len = seeds_query.len();
+    let order_val_last = seeds_query[q_len - 1].order_val;
 
     if forward_strand == false {
-        for node in seeds_q.iter_mut() {
+        for node in seeds_query.iter_mut() {
             node.order = q_len as u32 - node.order - 1;
             node.order_val = order_val_last - node.order_val;
             //            for child_id in node.child_nodes.iter_mut(){
@@ -109,6 +108,7 @@ fn get_chains<'a>(
 
     let mut f = vec![0.0 as f64];
     f.reserve(anchors.len());
+
     let mut pointer_array = vec![];
     for i in 0..anchors.len() {
         pointer_array.push(i);
@@ -128,7 +128,7 @@ fn get_chains<'a>(
         chain_reads,
         h,
         &seeds_ref,
-        &seeds_q,
+        &seeds_query,
         (0, 0),
     );
 
@@ -138,7 +138,7 @@ fn get_chains<'a>(
         pointer_array,
         &anchors,
         &seeds_ref,
-        &seeds_q,
+        &seeds_query,
         chain_reads,
     );
 
@@ -164,8 +164,8 @@ fn get_chains<'a>(
             if seeds_ref[anchor.0 as usize].order < range_ref.0
                 || seeds_ref[anchor.0 as usize].order > range_ref.1
             {
-                if seeds_q[anchor.1 as usize].order < range_query.0
-                    || seeds_q[anchor.1 as usize].order > range_query.1
+                if seeds_query[anchor.1 as usize].order < range_query.0
+                    || seeds_query[anchor.1 as usize].order > range_query.1
                 {
                     second_round_anchors.push(*anchor);
                 }
@@ -190,7 +190,7 @@ fn get_chains<'a>(
             chain_reads,
             h,
             &seeds_ref,
-            &seeds_q,
+            &seeds_query,
             (range_ref.1, range_query.1),
         );
 
@@ -200,7 +200,7 @@ fn get_chains<'a>(
                 pointer_array,
                 &second_round_anchors,
                 &seeds_ref,
-                &seeds_q,
+                &seeds_query,
                 chain_reads,
             )[0],
         );
@@ -208,7 +208,7 @@ fn get_chains<'a>(
         best_seq_anchors_1.append(&mut best_seq_anchors_2);
         //Reverse back because we may not want q reversed if the best alignment was actually forward.
         if forward_strand == false {
-            for node in seeds_q.iter_mut() {
+            for node in seeds_query.iter_mut() {
                 node.order = q_len as u32 - node.order - 1;
                 //            for child_id in node.child_nodes.iter_mut(){
                 //                *child_id = q_len as u32 - *child_id - 1;
@@ -222,7 +222,7 @@ fn get_chains<'a>(
 
 pub fn anchors_from_seeds(
     seeds_ref: &Vec<KmerNode>,
-    seeds_q: &Vec<KmerNode>,
+    seeds_query: &Vec<KmerNode>,
     ref_hash_map: &FxHashMap<Kmer16, Vec<u32>>,
     q_hash_map: &FxHashMap<Kmer16, Vec<u32>>,
     not_used_kmers: &FxHashSet<Kmer16>,
@@ -244,7 +244,7 @@ pub fn anchors_from_seeds(
             for p1 in ref_positions {
                 for p2 in query_positions {
                     let node_r = &seeds_ref[*p1 as usize];
-                    let node_q = &seeds_q[*p2 as usize];
+                    let node_q = &seeds_query[*p2 as usize];
                     if node_r.primary_base.is_none() && only_primary {
                         continue;
                     }
@@ -278,7 +278,7 @@ pub fn anchors_from_seeds(
 
 pub fn chain_seeds<'a>(
     seeds_ref: &'a Vec<KmerNode>,
-    seeds_q: &'a mut Vec<KmerNode>,
+    seeds_query: &'a mut Vec<KmerNode>,
     ref_hash_map: &'a FxHashMap<Kmer16, Vec<u32>>,
     q_hash_map: &'a FxHashMap<Kmer16, Vec<u32>>,
     h: usize,
@@ -287,13 +287,10 @@ pub fn chain_seeds<'a>(
     not_used_kmers: &FxHashSet<Kmer16>,
     circular: bool,
 ) -> Vec<(Anchors, f64, bool)> {
-    let q_len = seeds_q.len();
-    let now = Instant::now();
-
     let (mut forward_anchors, mut backward_anchors, num_forward_anchors, num_backward_anchors) =
         anchors_from_seeds(
             seeds_ref,
-            seeds_q,
+            seeds_query,
             ref_hash_map,
             q_hash_map,
             not_used_kmers,
@@ -319,7 +316,7 @@ pub fn chain_seeds<'a>(
         "Num forward/back anchors {},{}, Query length {}",
         forward_anchors.len(),
         backward_anchors.len(),
-        seeds_q.len()
+        seeds_query.len()
     );
 
     if !ambig && !chain_reads {
@@ -331,7 +328,7 @@ pub fn chain_seeds<'a>(
         }
         let mut chains_scores = get_chains(
             seeds_ref,
-            seeds_q,
+            seeds_query,
             h,
             chain_heuristic,
             chain_reads,
@@ -343,18 +340,17 @@ pub fn chain_seeds<'a>(
             .iter_mut()
             .map(|x| (mem::take(&mut x.0), x.1, forward_strand))
             .collect();
-        //vec![(best_chain, aln_score, forward_strand)];
     } else {
-        //        let chain_heuristic;
-        if forward_anchors.len() > 100000 || backward_anchors.len() > 100000 {
-            //            chain_heuristic = true;
-        } else {
-            //            chain_heuristic = false;
-        }
+        // //        let chain_heuristic;
+        // if forward_anchors.len() > 100000 || backward_anchors.len() > 100000 {
+        //     //            chain_heuristic = true;
+        // } else {
+        //     //            chain_heuristic = false;
+        // }
         forward_strand = true;
         let chains_scores_forward = get_chains(
             seeds_ref,
-            seeds_q,
+            seeds_query,
             h,
             chain_heuristic,
             chain_reads,
@@ -365,7 +361,7 @@ pub fn chain_seeds<'a>(
         forward_strand = false;
         let chains_scores_backward = get_chains(
             seeds_ref,
-            seeds_q,
+            seeds_query,
             h,
             chain_heuristic,
             chain_reads,
@@ -381,18 +377,6 @@ pub fn chain_seeds<'a>(
             return_chains.push((chain, score, false));
         }
         return return_chains;
-
-        //        if aln_score_backward > aln_score_forward {
-        //            for node in seeds_q.iter_mut() {
-        //                node.order = q_len as u32 - node.order - 1;
-        //                //            for child_id in node.child_nodes.iter_mut(){
-        //                //                *child_id = q_len as u32 - *child_id - 1;
-        //                //            }
-        //            }
-        //            return (best_seq_anchors_backward, aln_score_backward, false);
-        //        } else {
-        //            return (best_seq_anchors_forward, aln_score_forward, true);
-        //        }
     }
 }
 
@@ -595,502 +579,6 @@ pub fn get_best_path_from_chain_rewrite(
     return (best_path_colors, consistent_color_anchors);
 }
 
-pub fn get_best_path_from_chain2(
-    anchors: &Anchors,
-    ref_nodes: &Vec<KmerNode>,
-    order_to_id: &Vec<u32>,
-    query_nodes: &Vec<KmerNode>,
-    read_length: usize,
-    is_primary_ref: bool,
-) -> (Vec<Color>, Vec<(Anchors, f64)>) {
-    let mut in_edges_dict: FxHashMap<u32, Vec<u32>> = FxHashMap::default();
-    let mut best_paths: FxHashMap<u32, Vec<(Color, f64, usize, usize)>> = FxHashMap::default();
-    let mut current_anchor_id = 0;
-
-    if anchors.len() == 0 {
-        log::trace!("No anchors found");
-        return (vec![], vec![]);
-    }
-
-    let mut cumulative_best_score = f64::MIN;
-    let last_node = &ref_nodes[anchors.last().unwrap().0 as usize];
-    let first_node = &ref_nodes[anchors[0].0 as usize];
-    let mut best_node = first_node;
-
-    //Create a starting path for the first node
-    for child_id in first_node.child_nodes.iter() {
-        let parent_vec = in_edges_dict.entry(*child_id).or_insert(vec![]);
-        parent_vec.push(first_node.id);
-    }
-
-    best_paths.insert(first_node.id, vec![(first_node.color, 10.0, 0, 0)]);
-    current_anchor_id += 1;
-
-    for i in first_node.order + 1..last_node.order + 1 {
-        let id_of_node = order_to_id[i as usize];
-        //        println!("Id/order of node {},{}", id_of_node, i);
-
-        let intermediate_node = &ref_nodes[id_of_node as usize];
-
-        for child_id in intermediate_node.child_nodes.iter() {
-            let parent_vec = in_edges_dict.entry(*child_id).or_insert(vec![]);
-            parent_vec.push(intermediate_node.id);
-        }
-
-        //Reevaluate paths
-        let mut best_node_paths = vec![];
-        best_node_paths.reserve(20);
-
-        let parent_vec;
-        //Possible path for nodes that don't have an ancestor that
-        //was in anchor
-        if !in_edges_dict.contains_key(&intermediate_node.id) {
-            best_paths.insert(
-                intermediate_node.id,
-                vec![(intermediate_node.color, 0.0, 0, current_anchor_id)],
-            );
-            parent_vec = vec![];
-        } else {
-            parent_vec = in_edges_dict.get(&intermediate_node.id).unwrap().to_vec();
-        }
-
-        let mut unreachable_past = false;
-
-        let anchor_hit;
-        if anchors[current_anchor_id].0 == intermediate_node.id {
-            anchor_hit = true;
-        } else {
-            anchor_hit = false;
-            if ref_nodes[anchors[current_anchor_id].0 as usize].order < intermediate_node.order {
-                unreachable_past = true;
-            }
-        }
-
-        //Weird stuff happens w.r.t coloring if there is an insertion in the graph
-        //Consider    o
-        //          /   \
-        //        o   -  o
-        //
-        //        if the bottom-left is 111, top is 110, bottom-right is 111, then the path
-        //        from BL to BR should be 001.
-
-        let mut all_colors = 0;
-        for parent_id in parent_vec.iter() {
-            //Get the color of the edge from the parent to the current node
-            let parent_node = &ref_nodes[*parent_id as usize];
-            let mut edge_color = 0;
-            let mut bp_ref_distance = 0;
-            let mut num_edges_diff_bp = 0;
-            for edge in parent_node.child_edge_distance.iter() {
-                let ind = edge.1 .1;
-                if parent_node.child_nodes[ind as usize] == intermediate_node.id {
-                    edge_color |= edge.1 .0;
-                    bp_ref_distance += edge.0 as usize;
-                    num_edges_diff_bp += 1;
-                }
-            }
-
-            bp_ref_distance /= num_edges_diff_bp;
-
-            let cutoff = usize::MAX;
-            let parent_paths = best_paths.get_mut(parent_id).unwrap();
-            if parent_paths.len() > cutoff {
-                parent_paths.sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap());
-                dbg!(&parent_paths);
-            }
-            for l in 0..usize::min(parent_paths.len(), cutoff) {
-                let parent_path = &parent_paths[l];
-                let parent_path_color = parent_path.0;
-                all_colors |= parent_path_color;
-                //Color coherence is needed for new paths w.r.t intermediate node
-                if parent_path_color & edge_color != 0 {
-                    let new_color = parent_path_color & edge_color;
-                    //If the intermediate node is one of the anchor nodes
-                    if anchor_hit {
-                        //Calculate gap cost
-                        //circular stuff
-                        //
-                        let query_dist;
-                        //                        query_dist = anchors[current_anchor_id].1 as i64
-                        //                            - anchors[current_anchor_id - 1].1 as i64;
-                        query_dist = (query_nodes[anchors[current_anchor_id].1 as usize]
-                            .actual_ref_positions[0] as i64
-                            - query_nodes[anchors[current_anchor_id - 1].1 as usize]
-                                .actual_ref_positions[0] as i64)
-                            .abs();
-
-                        //                        let ref_dist = parent_path.2 + 1;
-                        let ref_dist = parent_path.2 + bp_ref_distance;
-                        let gap_cost = ((query_dist as i64).abs() - ref_dist as i64).abs() as f64;
-                        let new_score_add = (constants::PATH_CHAIN_BASE_SCORE - gap_cost) as f64;
-                        let updated_path =
-                            (new_color, parent_path.1 + new_score_add, 0, parent_path.3);
-                        best_node_paths.push(updated_path);
-                    }
-                    //Just update the paths by increasing the distance by 1
-                    else {
-                        let updated_path =
-//                            (new_color, parent_path.1, parent_path.2 + 1, parent_path.3);
-                            (new_color, parent_path.1, parent_path.2 + bp_ref_distance, parent_path.3);
-                        best_node_paths.push(updated_path);
-                    }
-                }
-            }
-        }
-
-        if anchor_hit {
-            let curr_best_path = best_node_paths
-                .iter()
-                .max_by(|x, y| x.1.partial_cmp(&y.1).unwrap());
-            if !curr_best_path.is_none() {
-                if curr_best_path.unwrap().1 > cumulative_best_score {
-                    best_node = intermediate_node;
-                    cumulative_best_score = curr_best_path.unwrap().1
-                }
-            }
-            //            dbg!(&intermediate_node);
-            //            for path in best_node_paths.iter(){
-            //                dbg!(align::get_nonzero_bits(path.0), path.1);
-            //            }
-        }
-
-        if intermediate_node.color & all_colors != intermediate_node.color && parent_vec.len() > 0 {
-            let remaining_colors = intermediate_node.color ^ all_colors;
-            let mut lowest_score = 0.0;
-            for path in best_node_paths.iter() {
-                if lowest_score < path.1 {
-                    lowest_score = path.1;
-                }
-            }
-            if remaining_colors > 0 {
-                //                println!("{:?}", &best_node_paths);
-                //                print_as_binary(remaining_colors,"".to_string());
-                //                print_as_binary(intermediate_node.color,"".to_string());
-                //                print_as_binary(all_colors,"".to_string());
-                best_node_paths.push((remaining_colors, lowest_score, 0, current_anchor_id));
-            }
-        }
-        //        if intermediate_node.actual_ref_positions.len() > 0{
-        //            dbg!(&best_node_paths, &intermediate_node);
-        //        }
-
-        let mut color_set = FxHashSet::default();
-        for path in best_node_paths.iter() {
-            if color_set.contains(&path.0) {
-                dbg!(&best_node_paths, &intermediate_node);
-                for id in in_edges_dict.get(&intermediate_node.id).unwrap() {
-                    dbg!(&ref_nodes[*id as usize]);
-                }
-                panic!();
-            } else {
-                color_set.insert(path.0);
-            }
-        }
-        //        if intermediate_node.id == 274837{
-        //            dbg!(&best_node_paths, &intermediate_node);
-        //        }
-        best_paths.insert(intermediate_node.id, best_node_paths);
-        if anchor_hit || unreachable_past {
-            current_anchor_id += 1;
-        }
-    }
-
-    let mut best_path_colors = vec![];
-    let mut best_path_scores = vec![];
-    let mut best_path_start_anchors = vec![];
-    let best_path = best_paths.get_mut(&last_node.id);
-    //    let best_path = best_paths.get(&best_node.id);
-    if let None = best_path {
-        log::warn!("Best path is None");
-        return (vec![], vec![]);
-    }
-    let best_path = best_path.unwrap();
-    if best_path.is_empty() {
-        log::warn!("Best path is None");
-        return (vec![], vec![]);
-    }
-
-    let read_length = (query_nodes.iter().last().unwrap().actual_ref_positions[0] as i64
-        - query_nodes[0].actual_ref_positions[0] as i64)
-        .abs();
-
-    for path in best_path.iter_mut() {
-        let last_node_q = &query_nodes[anchors.last().unwrap().1 as usize];
-        let first_node_q = &query_nodes[anchors[path.3].1 as usize];
-        let total_query_dist = (last_node_q.actual_ref_positions[0] as i64
-            - first_node_q.actual_ref_positions[0] as i64)
-            .abs();
-
-        let length_diff = read_length - total_query_dist;
-        path.1 -= length_diff as f64;
-    }
-
-    let best_path_score = best_path
-        .iter()
-        .max_by(|x, y| x.1.partial_cmp(&y.1).unwrap())
-        .unwrap()
-        .1;
-
-    if best_path_score < (anchors.len() as f64) * constants::PATH_THRESHOLD_FRACTION
-        && !is_primary_ref
-    {
-        log::trace!(
-            "Best path {} < {} is bad",
-            best_path_score,
-            anchors.len() as f64 * constants::PATH_THRESHOLD_FRACTION
-        );
-        return (vec![], vec![]);
-    } else if best_path_score < -(query_nodes.len() as f64) * constants::PATH_THRESHOLD_FRACTION {
-        log::trace!(
-            "Best path {} < {} is bad",
-            best_path_score,
-            anchors.len() as f64 * constants::PATH_THRESHOLD_FRACTION
-        );
-        return (vec![], vec![]);
-    }
-
-    for path in best_path.iter() {
-        best_path_colors.push(path.0);
-        best_path_scores.push(path.1);
-        best_path_start_anchors.push(path.3);
-    }
-
-    let mut consistent_color_anchors = vec![];
-    for j in 0..best_path_start_anchors.len() {
-        let mut consistent_anchors = vec![];
-        let start_anchor = best_path_start_anchors[j];
-        for i in start_anchor..anchors.len() {
-            let anchor = anchors[i];
-            if &ref_nodes[anchor.0 as usize].color & best_path_colors[j] == best_path_colors[j] {
-                consistent_anchors.push(anchor);
-            }
-        }
-        consistent_color_anchors.push((consistent_anchors, best_path_scores[j]));
-    }
-
-    let best_paths_print = best_paths.get(&last_node.id);
-    if !best_paths_print.is_none() {
-        let bp_print = best_paths_print.unwrap();
-        for (i, path) in bp_print.iter().enumerate() {
-            print!(
-                "{},{},{},{} - {}\n",
-                path.0.trailing_zeros(),
-                path.1,
-                path.2,
-                path.3,
-                consistent_color_anchors[i].0.len()
-            );
-        }
-    }
-    log::trace!("{:?}", best_paths.get(&last_node.id));
-    //    println!("{:?}", best_paths.get(&best_node.id));
-    return (best_path_colors, consistent_color_anchors);
-}
-
-//pub fn get_best_path_from_chain(
-//    anchors: Anchors,
-//    ref_nodes: &Vec<KmerNode>,
-//    order_to_id: &Vec<u32>,
-//    q_len: u32,
-//) -> (u64, Anchors) {
-//    let mut in_edges_dict: FxHashMap<u32, Vec<u32>> = FxHashMap::default();
-//    let mut nodes_to_search = FxHashSet::default();
-//    let mut best_paths: FxHashMap<u32, Vec<(u64, f64, usize)>> = FxHashMap::default();
-//    let n = 25;
-//    let mut current_anchor_id = 0;
-//
-//    if anchors.len() == 0 {
-//        return (1, vec![]);
-//    }
-//
-//    let last_node = &ref_nodes[anchors.last().unwrap().0 as usize];
-//    let first_node = &ref_nodes[anchors[0].0 as usize];
-//
-//    //Create a starting path for the first node
-//    for child_id in first_node.child_nodes.iter() {
-//        nodes_to_search.insert(child_id);
-//        let parent_vec = in_edges_dict.entry(*child_id).or_insert(vec![]);
-//        parent_vec.push(first_node.id);
-//    }
-//
-//    best_paths.insert(first_node.id, vec![(first_node.color, 10.0, 0)]);
-//    current_anchor_id += 1;
-//
-//    for i in first_node.order + 1..last_node.order + 1 {
-//        let id_of_node = order_to_id[i as usize];
-//        //        println!("Id/order of node {},{}", id_of_node, i);
-//
-//        //Don't iterate over nodes which do not have an ancestor
-//        if !nodes_to_search.contains(&id_of_node) {
-//            if i == last_node.order {
-//                //Edge case needs to be sorted out
-//                //                dbg!(&first_node,&last_node);
-//                //                dbg!(&ref_nodes[first_node.child_nodes[0] as usize]);
-//                //                dbg!(&anchors);
-//            }
-//            continue;
-//        }
-//
-//        let intermediate_node = &ref_nodes[id_of_node as usize];
-//
-//        for child_id in intermediate_node.child_nodes.iter() {
-//            nodes_to_search.insert(child_id);
-//            let parent_vec = in_edges_dict.entry(*child_id).or_insert(vec![]);
-//            parent_vec.push(intermediate_node.id);
-//        }
-//
-//        //Reevaluate paths
-//        let mut best_node_paths = vec![];
-//        best_node_paths.reserve(20);
-//        let parent_vec = in_edges_dict.get(&intermediate_node.id).unwrap();
-//        let anchor_hit;
-//        let mut unreachable_past = false;
-//
-//        if anchors[current_anchor_id].0 == intermediate_node.id {
-//            anchor_hit = true;
-//        } else {
-//            anchor_hit = false;
-//            if ref_nodes[anchors[current_anchor_id].0 as usize].order < intermediate_node.order {
-//                unreachable_past = true;
-//            }
-//        }
-//
-//        //Weird stuff happens w.r.t coloring if there is an insertion in the graph
-//        //Consider    o
-//        //          /   \
-//        //        o   -  o
-//        //
-//        //        if the bottom-left is 111, top is 110, bottom-right is 111, then the path
-//        //        from BL to BR should be 001.
-//
-//        //TODO change this when using more references.
-//
-//        let mut all_colors = 0;
-//        for parent_id in parent_vec.iter() {
-//            let parent_paths = best_paths.get(parent_id).unwrap();
-//            for parent_path in parent_paths {
-//                let parent_path_color = parent_path.0;
-//                all_colors |= parent_path_color;
-//                //Color coherence is needed for new paths w.r.t intermediate node
-//                if parent_path_color & intermediate_node.color != 0 {
-//                    let new_color = parent_path_color & intermediate_node.color;
-//                    //If the intermediate node is one of the anchor nodes
-//                    if anchor_hit {
-//                        //Calculate gap cost
-//                        //circular stuff
-//                        //
-//                        let query_dist;
-//                        //                        if anchors[current_anchor_id].1 < anchors[current_anchor_id - 1].1 {
-//                        //                            query_dist = anchors[current_anchor_id].1 + q_len
-//                        //                                - anchors[current_anchor_id - 1].1;
-//                        //                        } else {
-//                        query_dist = anchors[current_anchor_id].1 as i64
-//                            - anchors[current_anchor_id - 1].1 as i64;
-//                        //                        }
-//                        let ref_dist = parent_path.2 + 1;
-//                        let gap_cost = 1 * ((query_dist as i64).abs() - ref_dist as i64).abs();
-//
-//                        let new_score_add = (10 - gap_cost) as f64;
-//                        let updated_path = (new_color, parent_path.1 + new_score_add, 0);
-//                        best_node_paths.push(updated_path);
-//                    }
-//                    //Just update the paths by increasing the distance by 1
-//                    else {
-//                        let updated_path = (new_color, parent_path.1, parent_path.2 + 1);
-//                        best_node_paths.push(updated_path);
-//                    }
-//                }
-//            }
-//        }
-//
-//        if intermediate_node.color & all_colors != intermediate_node.color {
-//            let remaining_colors = intermediate_node.color ^ all_colors;
-//            if remaining_colors > 0 {
-//                //                println!("{:?}", &best_node_paths);
-//                //                print_as_binary(remaining_colors,"".to_string());
-//                //                print_as_binary(intermediate_node.color,"".to_string());
-//                //                print_as_binary(all_colors,"".to_string());
-//                best_node_paths.push((remaining_colors, 0.0, 0));
-//            }
-//        }
-//
-//        //Update the path
-//        //the xor operation is for the weird deletion case mentioned above.
-//        if parent_vec.len() > 1 {
-//            let mut test_set = FxHashSet::default();
-//            let mut path_split = true;
-//            best_node_paths.sort_by(|a, b| b.partial_cmp(&a).unwrap());
-//            //            dbg!(&best_node_paths);
-//
-//            for path in best_node_paths.iter_mut() {
-//                let x = path.0;
-//                if !((x & (x - 1)) == 0) {
-//                    //                    dbg!(x);
-//                    path_split = false;
-//                }
-//                //collapse paths
-//                if test_set.contains(&path.0) {
-//                    path.0 = 0;
-//                } else {
-//                    test_set.insert(path.0);
-//                }
-//            }
-//
-//            if !path_split {
-//                let mut changes = vec![];
-//                for i in 0..best_node_paths.len() {
-//                    let path_i = &best_node_paths[i];
-//                    for j in i + 1..best_node_paths.len() {
-//                        let path_j = &best_node_paths[j];
-//                        if path_i.0 & path_j.0 == path_j.0 {
-//                            changes.push((i, path_i.0 ^ path_j.0));
-//                            break;
-//                        }
-//                    }
-//                }
-//
-//                for (i, color) in changes {
-//                    best_node_paths[i].0 = color;
-//                }
-//                //            if best_node_paths.len() > n{
-//                //                best_node_paths.drain(n..);
-//                //                    let parent_color= format!("{:#08b}", parent_path_color);
-//                //                    let int_color= format!("{:#08b}", intermediate_node.color);
-//                //                    dbg!(parent_color, int_color);
-//                //            }
-//                //            dbg!(&best_node_paths);
-//            }
-//        }
-//        best_paths.insert(intermediate_node.id, best_node_paths);
-//        if anchor_hit || unreachable_past {
-//            current_anchor_id += 1;
-//        }
-//    }
-//
-//    let mut best_path_color = Color::MAX;
-//    let mut best_path_score = f64::MIN;
-//    let best_path = best_paths.get(&last_node.id);
-//    if let None = best_path {
-//        return (u64::MAX, vec![(0, 0)]);
-//    }
-//    for path in best_path.unwrap() {
-//        if path.1 > best_path_score {
-//            best_path_color = path.0;
-//            best_path_score = path.1;
-//        }
-//    }
-//
-//    let mut consistent_color_anchors = vec![];
-//    for anchor in anchors {
-//        if &ref_nodes[anchor.0 as usize].color & best_path_color == best_path_color {
-//            consistent_color_anchors.push(anchor);
-//        }
-//    }
-//
-//    println!("{:?}", best_paths.get(&last_node.id));
-//    return (best_path_color, consistent_color_anchors);
-//}
-
 fn modulo_n(value: u32, n: u32, modulo_position: u32) -> usize {
     if value >= modulo_position {
         return (value - modulo_position) as usize;
@@ -1103,6 +591,10 @@ fn modulo_n(value: u32, n: u32, modulo_position: u32) -> usize {
     }
 }
 
+/// Score anchors using the banded dynamic programming algorithm
+/// 
+/// Results are stored in the f array; tracebacks are stored in the pointer array
+/// 
 pub fn score_anchors(
     f: &mut Vec<f64>,
     pointer_array: &mut [usize],
@@ -1111,10 +603,10 @@ pub fn score_anchors(
     chain_reads: bool,
     h: usize,
     seeds_ref: &Vec<KmerNode>,
-    seeds_q: &Vec<KmerNode>,
+    seeds_query: &Vec<KmerNode>,
     modulo_positions: (u32, u32),
 ) {
-    let q_len = seeds_q.len() as u32;
+    let q_len = seeds_query.len() as u32;
     let r_len = seeds_ref.len() as u32;
     let mut ref_color_vec = vec![0; anchors.len()];
     if chain_reads && chain_heuristic {
@@ -1131,13 +623,12 @@ pub fn score_anchors(
     }
     let c1 = 1.0;
 
-    //    let mut last_best_j = usize::MAX;
     let mut avl_tree: SearchTree<[usize; 2]> = SearchTree::new();
     if !chain_reads || !chain_heuristic {
         for (i, anchor) in anchors.iter().enumerate() {
             avl_tree.insert([
                 modulo_n(
-                    seeds_q[anchor.1 as usize].order_val,
+                    seeds_query[anchor.1 as usize].order_val,
                     q_len,
                     modulo_positions.1,
                 ),
@@ -1147,14 +638,14 @@ pub fn score_anchors(
         avl_tree.update_query_info(
             [
                 modulo_n(
-                    seeds_q[anchors[0].1 as usize].order_val,
+                    seeds_query[anchors[0].1 as usize].order_val,
                     q_len,
                     modulo_positions.1,
                 ),
                 0,
             ],
             c1 * (modulo_n(
-                seeds_q[anchors[0].1 as usize].order_val,
+                seeds_query[anchors[0].1 as usize].order_val,
                 q_len,
                 modulo_positions.1,
             ) + modulo_n(
@@ -1171,14 +662,16 @@ pub fn score_anchors(
     let adj_h = (h * anchors.len()) as f64 / 12500 as f64 + 20.;
     let adj_h = usize::min(adj_h as usize, h * 2);
 
+    log::trace!("Starting chaining");
+
     for i in 1..anchors.len() {
         let q_oval;
         let r_oval;
         if chain_heuristic && chain_reads {
-            q_oval = seeds_q[anchors[i].1 as usize].order_val;
+            q_oval = seeds_query[anchors[i].1 as usize].order_val;
             r_oval = seeds_ref[anchors[i].0 as usize].order_val;
         } else {
-            q_oval = seeds_q[anchors[i].1 as usize].order_val;
+            q_oval = seeds_query[anchors[i].1 as usize].order_val;
             r_oval = seeds_ref[anchors[i].0 as usize].order_val;
         }
         let anchoriq = modulo_n(q_oval, q_len, modulo_positions.1);
@@ -1191,12 +684,13 @@ pub fn score_anchors(
         if chain_heuristic && chain_reads {
             for j in (0..i).rev() {
                 if num_iter == adj_h || max_num_iter > 3 * adj_h {
+                    // log::trace!("Breaking at i = {}", i);
                     break;
                 }
 
-                let anchorjq = seeds_q[anchors[j].1 as usize].order_val as usize;
+                let anchorjq = seeds_query[anchors[j].1 as usize].order_val as usize;
                 let anchorjr = seeds_ref[anchors[j].0 as usize].order_val as usize;
-                let anchoriq = seeds_q[anchors[i].1 as usize].order_val as usize;
+                let anchoriq = seeds_query[anchors[i].1 as usize].order_val as usize;
 
                 if anchoriq < anchorjq {
                     //panic!("Don't deal with circular mappings right now");
@@ -1240,7 +734,19 @@ pub fn score_anchors(
                     num_iter += 1;
                     let ref_order_dist = (anchorir - anchorjr) as f64;
                     let query_order_dist = (anchoriq - anchorjq) as f64;
-                    f_cand_i = f[j] + heuristic_score(ref_order_dist, query_order_dist)
+                    f_cand_i = f[j] + heuristic_score(ref_order_dist, query_order_dist);
+                    if heuristic_score(ref_order_dist, query_order_dist) < 50.0 {
+                        log::trace!("Anchors: {}-to-{} ({},{}), ({},{}), score = {}, ref_dis = {}, query_dist = {}", 
+                                seeds_ref[anchors[i].0 as usize].id,
+                                seeds_ref[anchors[j].0 as usize].id,
+                                seeds_ref[anchors[i].0 as usize].order_val,
+                                seeds_query[anchors[i].1 as usize].order_val, 
+                                seeds_ref[anchors[j].0 as usize].order_val,
+                                seeds_query[anchors[j].1 as usize].order_val,
+                                heuristic_score(ref_order_dist, query_order_dist),
+                                ref_order_dist,
+                                query_order_dist);
+                    }
                 }
                 if f_cand_i > best_f_i {
                     best_f_i = f_cand_i;
@@ -1274,7 +780,7 @@ pub fn score_anchors(
             }
             if anchoriq
                 < modulo_n(
-                    seeds_q[anchors[best_j].1 as usize].order_val,
+                    seeds_query[anchors[best_j].1 as usize].order_val,
                     q_len,
                     modulo_positions.1,
                 )
@@ -1306,12 +812,18 @@ pub fn score_anchors(
     }
 }
 
+/// Get the best color coherent chains from the f and pointer array
+/// 
+/// # Returns
+/// A vector of tuples of (Anchors, (u32, u32), (u32, u32), f64). The first element is the
+/// anchors in the chain; the second element is the range of the reference anchors; the third
+/// element is the range of the query anchors; the fourth element is the score of the chain.
 pub fn get_best_chains(
     f: Vec<f64>,
     pointer_array: Vec<usize>,
     anchors: &Anchors,
     seeds_ref: &Vec<KmerNode>,
-    seeds_q: &Vec<KmerNode>,
+    seeds_query: &Vec<KmerNode>,
     chain_reads: bool,
 ) -> Vec<(Anchors, (u32, u32), (u32, u32), f64)> {
     //    for anchor in anchors.iter(){
@@ -1331,8 +843,8 @@ pub fn get_best_chains(
     }
     for i in 0..vec.len() {
         let mut coherent_color = Color::MAX;
-        //Only get the best chain for genome chaining
-        if (i > 0 && !chain_reads) {
+        // Only get the best chain for genome chaining
+        if i > 0 && !chain_reads {
             break;
         }
 
@@ -1394,8 +906,6 @@ pub fn get_best_chains(
             color = 1;
         }
 
-        //    dbg!(f[best_i]);
-
         log::trace!(
             "Chain number {}, Chain score {}, Color {:?}, Length {}",
             i,
@@ -1408,8 +918,8 @@ pub fn get_best_chains(
             seeds_ref[anchors[chain_sequence[chain_sequence.len() - 1]].0 as usize].order;
 
         log::trace!("End/start of ref anchors: {},{}", ref_end, ref_start);
-        let q_end = seeds_q[anchors[chain_sequence[0]].1 as usize].order;
-        let q_start = seeds_q[anchors[chain_sequence[chain_sequence.len() - 1]].1 as usize].order;
+        let q_end = seeds_query[anchors[chain_sequence[0]].1 as usize].order;
+        let q_start = seeds_query[anchors[chain_sequence[chain_sequence.len() - 1]].1 as usize].order;
 
         log::trace!("End/start of query anchors: {},{}", q_end, q_start);
 
@@ -1430,8 +940,8 @@ pub fn get_best_chains(
             seeds_ref[last_anchor.0 as usize].order,
         );
         let range_query = (
-            seeds_q[first_anchor.1 as usize].order,
-            seeds_q[last_anchor.1 as usize].order,
+            seeds_query[first_anchor.1 as usize].order,
+            seeds_query[last_anchor.1 as usize].order,
         );
         return_chains.push((best_seq_anchors, range_ref, range_query, ith_score));
     }

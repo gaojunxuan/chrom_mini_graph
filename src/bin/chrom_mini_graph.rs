@@ -1,4 +1,5 @@
 use bincode;
+use chrom_mini_graph::data_structs::SparseMatrix;
 use clap::ArgAction;
 use clap::ArgMatches;
 use simple_logger::SimpleLogger;
@@ -13,6 +14,7 @@ use chrom_mini_graph::coord_chain;
 use chrom_mini_graph::data_structs::KmerNode;
 //use chrom_mini_graph::deconvolution;
 use chrom_mini_graph::graph_utils;
+use chrom_mini_graph::bubbles_utils;
 use chrom_mini_graph::seeding_methods_bit;
 use clap::{Arg, Command};
 use debruijn::dna_string::*;
@@ -412,7 +414,7 @@ fn main() {
             hash_vec.sort_by(|a, b| b.1.cmp(a.1));
             let qlen = seeds2.len();
 
-            //            let (best_anchors, aln_score, forward_strand) = chain::chain_seeds(
+            // chain seeds and get the best anchors
             let anc_score_strand_vec = chain::chain_seeds(
                 &mut seeds1,
                 &mut seeds2,
@@ -429,6 +431,7 @@ fn main() {
                 .into_iter()
                 .max_by(|x, y| x.1.partial_cmp(&y.1).unwrap())
                 .unwrap();
+            
             //Need to reverse the read strand so that it is "forward". Bad mutability
             //design pattern here will change TODO
             //Only need this for circula because circular does chaining for both strands,
@@ -558,8 +561,64 @@ fn main() {
             }
         }
         // compute bubbles
-        let mut bubbles = graph_utils::find_bubbles(&seeds1);
+        let bubbles = bubbles_utils::find_bubbles(&seeds1);
         println!("Found {} bubbles", bubbles.len());
+        let mut file = File::create("bubbles.csv").unwrap();
+        for bubble in bubbles.iter() {
+            for kmer in bubble.kmers.iter() {
+                let towrite = format!("{},{}\n", seeds1[*kmer as usize].id.to_string(), seeds1[*kmer as usize].order_val.to_string());
+                write!(&mut file, "{}", towrite).unwrap();
+            }
+        }
+        let closest_node = graph_utils::get_closest_node(&seeds1);
+        let mut dist_mat = SparseMatrix::new((seeds1.len(), seeds1.len()));
+        for bubble in bubbles.iter() {
+            let shortest_path_on_bubble = graph_utils::shortest_path_length(&seeds1, &bubble.kmers, &bubble.start, &bubble.end);
+            let longest_path_on_bubble = graph_utils::longest_path_length(&seeds1, &bubble.kmers, &bubble.start, &bubble.end);
+            if longest_path_on_bubble as f32 > 1.5 * shortest_path_on_bubble as f32 {
+                println!("{} kmers in the bubble", bubble.kmers.len());
+                // save estimated reference distance in a sparse matrix
+                for i in 0..bubble.kmers.len() {
+                    let node1 = &seeds1[bubble.kmers[i] as usize];
+                    let closest1 = &closest_node[bubble.kmers[i] as usize];
+                    if closest1.is_none() {
+                        continue;
+                    }
+                    let closest1_node = &seeds1[closest1.unwrap().0 as usize];
+                    let dist_to_closest1 = closest1.unwrap().1;
+    
+                    for j in i+1..bubble.kmers.len() {
+                        let node2 = &seeds1[bubble.kmers[j] as usize];
+                        let closest2 = &closest_node[bubble.kmers[j] as usize];
+                        if closest2.is_none() {
+                            continue;
+                        }
+                        let closest2_node = &seeds1[closest2.unwrap().0 as usize];
+                        let dist_to_closest2 = closest2.unwrap().1;
+                        // find closest distance between two closest ref nodes
+                        let mut ref_dist = u16::MAX;
+                        for u in 0..closest1_node.actual_ref_positions.len() {
+                            for v in 0..closest2_node.actual_ref_positions.len() {
+                                let closest1_offset = closest1_node.actual_ref_positions[u] + (dist_to_closest1 as usize * k);
+                                let closest2_offset = closest2_node.actual_ref_positions[v] + (dist_to_closest2 as usize * k);
+                                let dist = (closest1_offset.abs_diff(closest2_offset)) as u16;
+                                if dist < ref_dist {
+                                    ref_dist = dist;
+                                }
+                            }
+                        }
+                        let linearized_dist = node1.order_val.abs_diff(node2.order_val) as u16;
+                        if linearized_dist.abs_diff(ref_dist) <= (longest_path_on_bubble - shortest_path_on_bubble) as u16 {
+                            continue;
+                        }
+                        dist_mat.set(node1.id as usize, node2.id as usize, ref_dist as u32);
+                        println!("{}-{}: {}-{}: {}-{}", node1.id, node2.id, node1.order_val, node2.order_val, ref_dist, linearized_dist);
+                    }
+                }
+            }
+        }
+        println!("{} element set in sparse distance matrix", dist_mat.num_nonzero);
+
         // save topological ordering to csv
         println!("Saving topological ordering to csv");
         let mut file = File::create("topo_order.csv").unwrap();
@@ -679,7 +738,6 @@ fn main() {
                             h,
                             chain_heuristic,
                             true,
-                            //                            &dont_use_kmers,
                             &FxHashSet::default(),
                             circular,
                         );

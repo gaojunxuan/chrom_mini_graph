@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use debruijn::kmer::Kmer16;
 use smallvec::SmallVec;
 use serde::{Serialize, Deserialize};
@@ -42,4 +44,34 @@ pub struct BamInfo{
     pub ref_name: String,
     pub map_pos: i64,
     pub mapq: u8,
+}
+
+pub struct SparseMatrix {
+    pub shape: (usize, usize),
+    pub data: HashSet<(usize, usize, u32)>,
+    pub num_nonzero: usize,
+}
+
+impl SparseMatrix {
+    pub fn new(shape: (usize, usize)) -> Self {
+        Self {
+            shape,
+            data: HashSet::new(),
+            num_nonzero: 0,
+        }
+    }
+
+    pub fn get(&self, i: usize, j: usize) -> u32 {
+        for (row, col, val) in &self.data {
+            if *row == i && *col == j {
+                return *val;
+            }
+        }
+        0
+    }
+
+    pub fn set(&mut self, i: usize, j: usize, val: u32) {
+        self.data.insert((i, j, val));
+        self.num_nonzero += 1;
+    }
 }

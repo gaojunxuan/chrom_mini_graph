@@ -2,7 +2,7 @@ import json
 import sys, getopt
 
 def main(argv):
-    opts, args = getopt.getopt(argv, "he:i:o:",["input=","output=", "edgelst="])
+    opts, args = getopt.getopt(argv, "khe:i:o:",["input=","output=", "edgelst="])
     in_file = ""
     out_file = ""
     edgelst_file = ""
