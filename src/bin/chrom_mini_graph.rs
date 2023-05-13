@@ -280,6 +280,8 @@ fn main() {
         let mut chrom_names = vec![];
         let mut good_chrom_names = vec![];
 
+        let overall_start = Instant::now();
+
         for i in 0..ref_genomes.len() {
             let reader = fasta::Reader::from_file(&ref_genomes[i]);
             for record in reader.unwrap().records() {
@@ -638,6 +640,7 @@ fn main() {
         //     let towrite = format!("{},{}\n", node.id, node.order_val);
         //     write!(&mut file, "{}", towrite).unwrap();
         // }
+        println!("Total time {}", overall_start.elapsed().as_secs_f32());
     } else {
         let num_t_str = matches_subc.get_one::<String>("threads").unwrap();
         let num_t = match num_t_str.parse::<usize>() {
