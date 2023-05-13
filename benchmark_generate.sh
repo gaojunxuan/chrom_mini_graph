@@ -7,9 +7,9 @@
 source /oicr/local/Modules/default/init/sh
 
 # Define variables
-CMG_EXE = /u/jgao/jgao/code/chrom_mini_graph/build/debug/chrom_mini_graph
-CHR11_FASTA = /u/jgao/jgao/projects/chrom_minigraph/chr11/*
-CHR20_FASTA = /u/jgao/jgao/projects/chrom_minigraph/chr20/* 
+CMG_EXE=/u/jgao/jgao/code/chrom_mini_graph/build/debug/chrom_mini_graph
+CHR11_FASTA=/u/jgao/jgao/projects/chrom_minigraph/chr11/*
+CHR20_FASTA=/u/jgao/jgao/projects/chrom_minigraph/chr20/* 
 
 # Run
 $CMG_EXE generate $CHR11_FASTA
