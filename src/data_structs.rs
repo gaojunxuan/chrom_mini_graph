@@ -1,5 +1,5 @@
-use std::collections::HashSet;
-
+use std::collections::{HashSet, BTreeSet, BTreeMap, HashMap};
+use std::vec::Vec;
 use debruijn::kmer::Kmer16;
 use smallvec::SmallVec;
 use serde::{Serialize, Deserialize};
@@ -25,6 +25,7 @@ pub struct KmerNode{
     pub repetitive: bool,
     pub primary_base: Option<u32>
 }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Bubble {
     pub id: u32,
     pub kmers: Vec<u32>,
@@ -46,9 +47,10 @@ pub struct BamInfo{
     pub mapq: u8,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SparseMatrix {
     pub shape: (usize, usize),
-    pub data: HashSet<(usize, usize, u32)>,
+    pub data: HashMap<(usize, usize), u32>,
     pub num_nonzero: usize,
 }
 
@@ -56,22 +58,20 @@ impl SparseMatrix {
     pub fn new(shape: (usize, usize)) -> Self {
         Self {
             shape,
-            data: HashSet::new(),
+            data: HashMap::new(),
             num_nonzero: 0,
         }
     }
 
     pub fn get(&self, i: usize, j: usize) -> u32 {
-        for (row, col, val) in &self.data {
-            if *row == i && *col == j {
-                return *val;
-            }
+        if self.data.contains_key(&(i,j)) {
+            return self.data.get(&(i, j)).unwrap().clone();
         }
-        0
+        u32::MAX
     }
 
     pub fn set(&mut self, i: usize, j: usize, val: u32) {
-        self.data.insert((i, j, val));
+        self.data.insert((i, j), val);
         self.num_nonzero += 1;
     }
 }

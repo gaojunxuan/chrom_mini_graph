@@ -753,6 +753,120 @@ pub fn get_closest_node(ref_nodes: &Vec<KmerNode>) -> Vec<Option<(u32, u16)>> {
     return closest_nodes;
 }
 
+/// Binary search a list of bubble positions (start, end, node_id, bubble_id) for the bubble 
+/// that with the search key as the start node
+fn binary_search_bubble(bubble_pos: &Vec<(u32, u32, usize, usize)>, search_key: u32) -> Option<(u32, u32, usize, usize)> {
+    let mut low: i32 = 0;
+    let mut high: i32 = (bubble_pos.len() - 1) as i32;
+    while low <= high {
+        let mid = low + (high - low) / 2;
+        if bubble_pos[mid as usize].0 < search_key {
+            low = mid + 1;
+        } else if bubble_pos[mid as usize].0 > search_key {
+            high = mid - 1;
+        } else {
+            return Some(bubble_pos[mid as usize]);
+        }
+    }
+    return None;
+}
+
+/// Get the closest bubble source node for each node in the graph
+/// 
+/// # Returns
+/// A vector of tuples (bubble_source_node_id, bubble_id, distance_to_bubble_source)
+/// 
+pub fn get_closest_bubble_source(ref_nodes: &Vec<KmerNode>, bubbles: &Vec<Bubble>) -> Vec<Option<(u32,u32,u16)>> {
+    // Vec of (node_id, bubble_id, distance_to_bubble_source)
+    let mut closest_nodes = vec![Some((0, 0, 0)); ref_nodes.len()];
+    // Vec of (distance_to_bubble_source, node_id, bubble_id)
+    let mut dist_to_bubble_nodes = vec![vec![]; ref_nodes.len()];
+    let mut visited_nodes = vec![false; ref_nodes.len()];
+
+    let mut in_edges = vec![vec![]; ref_nodes.len()];
+    for node in ref_nodes.iter() {
+        for child_id in node.child_nodes.iter() {
+            let edges = &mut in_edges[(*child_id) as usize];
+            edges.push(node.id);
+        }
+    }
+
+    // Vec of (start, end, node_id, bubble_id)
+    let mut bubble_pos = bubbles.iter()
+        .enumerate()
+        .map(|(i, x)| (ref_nodes[x.start as usize].order_val, ref_nodes[x.end as usize].order_val, x.id as usize, i))
+        .collect::<Vec<(u32, u32, usize, usize)>>();
+    radsort::sort_by_key(&mut bubble_pos, |x: &(u32, u32, usize, usize)| x.0);
+
+    //Forward iteration
+    for i in 0..ref_nodes.len() {
+        if visited_nodes[i] {
+            continue;
+        }
+
+        let mut curr_visited_nodes = FxHashSet::default();
+        let mut unitig_nodes = vec![i];
+        let mut parent_node = &ref_nodes[i];
+        let mut branching = false;
+        let mut bubble_node_found = false;
+        let mut nodes_to_search = VecDeque::new();
+        
+        // (node_id, bubble_id)
+        let mut closest_node = None;
+        let mut wander_dist = 0;
+
+        if !binary_search_bubble(&bubble_pos, parent_node.order_val).is_none() {
+            let pos = binary_search_bubble(&bubble_pos, parent_node.order_val).unwrap();
+            closest_nodes[i] = Some((i as u32, pos.3 as u32, 0 as u16));
+            continue;
+        }
+
+        while !bubble_node_found {
+            if parent_node.child_nodes.len() > 1 {
+                branching = true;
+            }
+
+            for child in parent_node.child_nodes.iter() {
+                let child_node = &ref_nodes[*child as usize];
+                let pos = binary_search_bubble(&bubble_pos, child_node.order_val);
+                if !pos.is_none() {
+                    bubble_node_found = true;
+                    let pos = pos.unwrap();
+                    closest_node = Some((child_node.id as usize, pos.2));
+                    break;
+                }
+                if !branching && pos.is_none() {
+                    unitig_nodes.push((*child) as usize);
+                }
+                if !curr_visited_nodes.contains(child) {
+                    nodes_to_search.push_back(*child);
+                    curr_visited_nodes.insert(*child);
+                }
+            }
+
+            if nodes_to_search.is_empty() {
+                break;
+            }
+            parent_node = &ref_nodes[nodes_to_search.pop_front().unwrap() as usize];
+            wander_dist += 1;
+        }
+
+        for (j, id) in unitig_nodes.iter().enumerate() {
+            visited_nodes[*id] = true;
+            if let Some(c_node) = closest_node {
+                dist_to_bubble_nodes[*id].push((wander_dist - j as u32, c_node.0 as usize, c_node.1 as usize));
+            }
+        }
+    }
+    for (i, vec) in dist_to_bubble_nodes.iter().enumerate() {
+        let closest_node = vec.iter().min();
+        if !closest_node.is_none() {
+            closest_nodes[i] = Some((closest_node.unwrap().1 as u32, closest_node.unwrap().2 as u32, closest_node.unwrap().0 as u16));
+        }
+    }
+    return closest_nodes;
+}
+
 /// Find the shortest path between bubble_start and bubble_end in the given bubble
 pub fn shortest_path_length(ref_nodes: &Vec<KmerNode>, bubble_nodes: &Vec<u32>, bubble_start: &u32, bubble_end: &u32) -> u32 {
     // assume that bubble_nodes are sorted in topological order

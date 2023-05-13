@@ -2,7 +2,7 @@ use crate::align;
 use simple_logger::SimpleLogger;
 use crate::avl_tree::SearchTree;
 use crate::constants;
-use crate::data_structs::KmerNode;
+use crate::data_structs::{KmerNode, Bubble, SparseMatrix};
 use crate::data_structs::{Anchors, Color};
 use debruijn::kmer::Kmer16;
 use debruijn::Kmer;
@@ -10,7 +10,9 @@ use fxhash::FxHashMap;
 use fxhash::FxHashSet;
 use smallvec::SmallVec;
 use core::num;
-use std::mem;
+use std::cmp::min;
+use std::i32::MAX;
+use std::mem::{self, swap};
 use std::time::Instant;
 
 pub fn print_as_binary(color: Color, string: String) {
@@ -83,6 +85,9 @@ fn get_chains<'a>(
     circular: bool,
     forward_strand: bool,
     anchors: &mut Vec<(u32, u32)>,
+    closest_bubble_source: Option<&Vec<Option<(u32,u32,u16)>>>,
+    bubbles: Option<&Vec<Bubble>>,
+    dist_mat: Option<&SparseMatrix>
 ) -> Vec<(Anchors, f64)> {
     let q_len = seeds_query.len();
     let order_val_last = seeds_query[q_len - 1].order_val;
@@ -130,6 +135,9 @@ fn get_chains<'a>(
         &seeds_ref,
         &seeds_query,
         (0, 0),
+        closest_bubble_source,
+        bubbles,
+        dist_mat
     );
 
     //    let (mut best_seq_anchors_1, range_ref, range_query) =
@@ -192,6 +200,9 @@ fn get_chains<'a>(
             &seeds_ref,
             &seeds_query,
             (range_ref.1, range_query.1),
+            closest_bubble_source,
+            bubbles,
+            dist_mat
         );
 
         let (mut best_seq_anchors_2, _range_ref, _range_query, second_best_aln_score) = mem::take(
@@ -286,6 +297,9 @@ pub fn chain_seeds<'a>(
     chain_reads: bool,
     not_used_kmers: &FxHashSet<Kmer16>,
     circular: bool,
+    closest_bubble_source: Option<&Vec<Option<(u32,u32,u16)>>>,
+    bubbles: Option<&Vec<Bubble>>,
+    dist_mat: Option<&SparseMatrix>
 ) -> Vec<(Anchors, f64, bool)> {
     let (mut forward_anchors, mut backward_anchors, num_forward_anchors, num_backward_anchors) =
         anchors_from_seeds(
@@ -335,6 +349,9 @@ pub fn chain_seeds<'a>(
             circular,
             forward_strand,
             &mut anchors,
+            closest_bubble_source,
+            bubbles,
+            dist_mat
         );
         return chains_scores
             .iter_mut()
@@ -357,6 +374,9 @@ pub fn chain_seeds<'a>(
             circular,
             forward_strand,
             &mut forward_anchors,
+            closest_bubble_source,
+            bubbles,
+            dist_mat
         );
         forward_strand = false;
         let chains_scores_backward = get_chains(
@@ -368,6 +388,9 @@ pub fn chain_seeds<'a>(
             circular,
             forward_strand,
             &mut backward_anchors,
+            closest_bubble_source,
+            bubbles,
+            dist_mat
         );
         let mut return_chains = vec![];
         for (chain, score) in chains_scores_forward.into_iter() {
@@ -605,6 +628,9 @@ pub fn score_anchors(
     seeds_ref: &Vec<KmerNode>,
     seeds_query: &Vec<KmerNode>,
     modulo_positions: (u32, u32),
+    closest_bubble_source: Option<&Vec<Option<(u32,u32,u16)>>>,
+    bubbles: Option<&Vec<Bubble>>,
+    dist_mat: Option<&SparseMatrix>,
 ) {
     let q_len = seeds_query.len() as u32;
     let r_len = seeds_ref.len() as u32;
@@ -725,7 +751,7 @@ pub fn score_anchors(
                     incompat_chain = true;
                 }
 
-                let f_cand_i;
+                let mut f_cand_i;
                 max_num_iter += 1;
 
                 if incompat_chain {
@@ -736,23 +762,181 @@ pub fn score_anchors(
                     let query_order_dist = (anchoriq - anchorjq) as f64;
                     f_cand_i = f[j] + heuristic_score(ref_order_dist, query_order_dist);
                     if heuristic_score(ref_order_dist, query_order_dist) < 50.0 {
-                        log::trace!("Anchors: {}-to-{} ({},{}), ({},{}), score = {}, ref_dis = {}, query_dist = {}", 
-                                seeds_ref[anchors[i].0 as usize].id,
-                                seeds_ref[anchors[j].0 as usize].id,
-                                seeds_ref[anchors[i].0 as usize].order_val,
-                                seeds_query[anchors[i].1 as usize].order_val, 
-                                seeds_ref[anchors[j].0 as usize].order_val,
-                                seeds_query[anchors[j].1 as usize].order_val,
-                                heuristic_score(ref_order_dist, query_order_dist),
-                                ref_order_dist,
-                                query_order_dist);
+                        let mut dist = ref_order_dist;
+                        if !closest_bubble_source.is_none() && !bubbles.is_none() && !dist_mat.is_none() {
+                            //     let bubble_pos = bubble_pos.unwrap();
+                            let bubbles = bubbles.unwrap();
+                            let dist_mat = dist_mat.unwrap();
+                            let closest_bubble_source = closest_bubble_source.unwrap();
+                            // negative score, check if i and j cross a superbubble
+                            // log::trace!("Anchors: {}-to-{} ({},{}), ({},{}), score = {}, ref_dis = {}, query_dist = {}", 
+                            //     seeds_ref[anchors[i].0 as usize].id,
+                            //     seeds_ref[anchors[j].0 as usize].id,
+                            //     seeds_ref[anchors[i].0 as usize].order_val,
+                            //     seeds_query[anchors[i].1 as usize].order_val, 
+                            //     seeds_ref[anchors[j].0 as usize].order_val,
+                            //     seeds_query[anchors[j].1 as usize].order_val,
+                            //     heuristic_score(ref_order_dist, query_order_dist),
+                            //     ref_order_dist,
+                            //     query_order_dist);
+
+                            let i_id = seeds_ref[anchors[i].0 as usize].id;
+                            let j_id = seeds_ref[anchors[j].0 as usize].id;
+                            let i_pos = seeds_ref[anchors[i].0 as usize].order_val;
+                            let j_pos = seeds_ref[anchors[j].0 as usize].order_val;
+
+                            let left_most_pos = u32::min(i_pos, j_pos);
+                            let right_most_pos = u32::max(i_pos, j_pos);
+                            let left_most_id = if left_most_pos == i_pos { i_id } else { j_id };
+                    
+                            let closest_bubble = closest_bubble_source[left_most_id as usize];
+                            let v_id = bubbles[closest_bubble.unwrap().1 as usize].end;
+                            let u_id = bubbles[closest_bubble.unwrap().1 as usize].start;
+                    
+                            let u_pos = seeds_ref[u_id as usize].order_val;
+                            let v_pos = seeds_ref[v_id as usize].order_val;
+                    
+                            // check if (i,j) contains the bubble interval (u,v)
+                            if left_most_pos <= u32::min(u_pos, v_pos) && right_most_pos >= u32::max(u_pos, v_pos) {
+                                // log::trace!("Anchor pair {}-{} crosses a superbubble", i_id, j_id);
+                                // use alternative scoring matrix to assign a score to the anchor pair
+                                let mut i_to_u = u32::MAX;
+                                let mut v_to_j = u32::MAX;
+                                let mut v = &seeds_ref[v_id as usize];
+                                let mut u = &seeds_ref[u_id as usize];
+                                // if u.order_val > v.order_val {
+                                //     mem::swap(&mut u, &mut v);
+                                // }
+                                if u.parent_nodes.len() > 0 {
+                                    // find the closest color consistent parent
+                                    // for parent in u.parent_nodes.iter() {
+                                    //     // check if parent is color consistent with i
+                                    //     if seeds_ref[*parent as usize].color & seeds_ref[anchors[i].0 as usize].color > 0 {
+                                    //         // update i_to_u
+                                    //         let dist_to_parent = u.order_val - seeds_ref[*parent as usize].order_val;
+                                    //         if dist_to_parent < i_to_u {
+                                    //             i_to_u = dist_to_parent;
+                                    //         }
+                                    //     }
+                                    // }
+                                    let parent = u.parent_nodes[0];
+                                    if seeds_ref[parent as usize].color & seeds_ref[anchors[i].0 as usize].color > 0 {
+                                        // update i_to_u
+                                        let dist_to_parent = u.order_val - seeds_ref[parent as usize].order_val;
+                                        if dist_to_parent < i_to_u {
+                                            i_to_u = dist_to_parent;
+                                        }
+                                    }
+                                }
+                                // similarly, find v_to_j
+                                if v.child_nodes.len() > 0 {
+                                    // for child in v.child_nodes.iter() {
+                                    //     if seeds_ref[*child as usize].color & seeds_ref[anchors[j].0 as usize].color > 0 {
+                                    //         let dist_to_child = seeds_ref[*child as usize].order_val - v.order_val;
+                                    //         // update v_to_j
+                                    //         if dist_to_child < v_to_j {
+                                    //             v_to_j = dist_to_child;
+                                    //         }
+                                    //     }
+                                    // }
+                                    let child = v.child_nodes[0];
+                                    if seeds_ref[child as usize].color & seeds_ref[anchors[j].0 as usize].color > 0 {
+                                        let dist_to_child = seeds_ref[child as usize].order_val - v.order_val;
+                                        // update v_to_j
+                                        if dist_to_child < v_to_j {
+                                            v_to_j = dist_to_child;
+                                        }
+                                    }
+                                }
+                                // update dist
+                                if i_to_u != u32::MAX && v_to_j != u32::MAX {
+                                    let mut u_to_v = min(dist_mat.get(u.id as usize, v.id as usize), dist_mat.get(v.id as usize, u.id as usize));
+                                    if u_to_v == u32::MAX {
+                                        u_to_v = 0;
+                                    }
+                                    dist = f64::min((i_to_u + u_to_v + v_to_j) as f64, dist) as f64;
+                                }
+                            }
+                            f_cand_i = f[j] + heuristic_score(dist, query_order_dist);
+                    
+                            //     // binary search for the closest bubble source u using i_pos as the search key
+                            //     let mut l: i64 = 0;
+                            //     let mut r: i64 = (bubble_pos.len() - 1) as i64;
+                            //     while l <= r {
+                            //         let m: i64 = l + (r - l) / 2;
+                            //         if bubble_pos[m as usize].0 >= left_most_pos {
+                            //             r = m - 1;
+                            //         } else if bubble_pos[m as usize].0 < left_most_pos {
+                            //             l = m + 1;
+                            //         } else {
+                            //             break;
+                            //         }
+                            //     }
+                            //     // l is the index of the closest bubble source u
+                            //     // third position of the tuple is the bubble id
+                            //     if l < bubble_pos.len() as i64 {
+                            //         let l = (usize::max(l as usize, 0));
+                            //         let u = bubble_pos[l].2;
+                            //         let closest_bubble = &bubbles[u];
+                            //         let u_pos = seeds_ref[closest_bubble.start as usize].order_val;
+                            //         let v_pos = seeds_ref[closest_bubble.end as usize].order_val;
+                            //         // check if (i,j) contains the bubble interval (u,v)
+                            //         if left_most_pos <= u32::min(u_pos, v_pos) && right_most_pos >= u32::max(u_pos, v_pos) {
+                            //             // log::trace!("Anchor pair {}-{} crosses a superbubble", i_id, j_id);
+                            //             // use alternative scoring matrix to assign a score to the anchor pair
+                            //             let mut i_to_u = u32::MAX;
+                            //             let mut v_to_j = u32::MAX;
+                            //             let mut v = &seeds_ref[bubbles[u as usize].end as usize];
+                            //             let mut u = &seeds_ref[closest_bubble.start as usize];
+                            //             if u.order_val > v.order_val {
+                            //                 mem::swap(&mut u, &mut v);
+                            //             }
+                            //             if u.parent_nodes.len() > 0 {
+                            //                 // find the closest color consistent parent
+                            //                 for parent in u.parent_nodes.iter() {
+                            //                     // check if parent is color consistent with i
+                            //                     if seeds_ref[*parent as usize].color & seeds_ref[anchors[i].0 as usize].color > 0 {
+                            //                         // update i_to_u
+                            //                         let dist_to_parent = u.order_val - seeds_ref[*parent as usize].order_val;
+                            //                         if dist_to_parent < i_to_u {
+                            //                             i_to_u = dist_to_parent;
+                            //                         }
+                            //                     }
+                            //                 }
+                            //             }
+                            //             // similarly, find v_to_j
+                            //             if v.child_nodes.len() > 0 {
+                            //                 for child in v.child_nodes.iter() {
+                            //                     if seeds_ref[*child as usize].color & seeds_ref[anchors[j].0 as usize].color > 0 {
+                            //                         let dist_to_child = seeds_ref[*child as usize].order_val - v.order_val;
+                            //                         if dist_to_child < v_to_j {
+                            //                             v_to_j = dist_to_child;
+                            //                         }
+                            //                     }
+                            //                 }
+                            //             }
+                            //             // update dist
+                            //             if i_to_u != u32::MAX && v_to_j != u32::MAX {
+                            //                 let mut u_to_v = min(dist_mat.get(u.id as usize, v.id as usize), dist_mat.get(v.id as usize, u.id as usize));
+                            //                 if u_to_v == u32::MAX {
+                            //                     u_to_v = 0;
+                            //                 }
+                            //                 dist = f64::min((i_to_u + u_to_v + v_to_j) as f64, dist) as f64;
+                            //             }
+                            //         }
+                            //     }
+                            // }
+                            // f_cand_i = f[j] + heuristic_score(dist, query_order_dist);
+                        }
                     }
                 }
+                
                 if f_cand_i > best_f_i {
                     best_f_i = f_cand_i;
                     best_j = j;
                 }
             }
+    
         } else {
             let gap_start = 0;
             let (best_score, best_id) = avl_tree.mrq(

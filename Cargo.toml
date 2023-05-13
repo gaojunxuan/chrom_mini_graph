@@ -26,6 +26,7 @@ probability = "*"
 rayon = "*"
 simple_logger = "*"
 log = "*"
+radsort = "*"
 
 [profile.release]
 opt-level = 3
