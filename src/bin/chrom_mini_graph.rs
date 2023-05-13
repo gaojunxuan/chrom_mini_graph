@@ -522,47 +522,79 @@ fn main() {
         let closest_node = graph_utils::get_closest_node(&seeds1);
         let mut dist_mat = SparseMatrix::new((seeds1.len(), seeds1.len()));
         for bubble in bubbles.iter() {
-            let shortest_path_on_bubble = graph_utils::shortest_path_length(&seeds1, &bubble.kmers, &bubble.start, &bubble.end);
-            let longest_path_on_bubble = graph_utils::longest_path_length(&seeds1, &bubble.kmers, &bubble.start, &bubble.end);
+            let shortest_path_on_bubble = bubble.shortest_path_length.unwrap();
+            let longest_path_on_bubble = bubble.longest_path_length.unwrap();
             if longest_path_on_bubble as f32 > 1.5 * shortest_path_on_bubble as f32 {
                 // save estimated reference distance in a sparse matrix
-                for i in 0..bubble.kmers.len() {
-                    let node1 = &seeds1[bubble.kmers[i] as usize];
-                    let closest1 = &closest_node[bubble.kmers[i] as usize];
-                    if closest1.is_none() {
-                        continue;
-                    }
-                    let closest1_node = &seeds1[closest1.unwrap().0 as usize];
-                    let dist_to_closest1 = closest1.unwrap().1;
+                // for i in 0..bubble.kmers.len() {
+                //     let node1 = &seeds1[bubble.kmers[i] as usize];
+                //     let closest1 = &closest_node[bubble.kmers[i] as usize];
+                //     if closest1.is_none() {
+                //         continue;
+                //     }
+                //     let closest1_node = &seeds1[closest1.unwrap().0 as usize];
+                //     let dist_to_closest1 = closest1.unwrap().1;
     
-                    for j in i+1..bubble.kmers.len() {
-                        let node2 = &seeds1[bubble.kmers[j] as usize];
-                        let closest2 = &closest_node[bubble.kmers[j] as usize];
-                        if closest2.is_none() {
-                            continue;
+                //     for j in i+1..bubble.kmers.len() {
+                //         let node2 = &seeds1[bubble.kmers[j] as usize];
+                //         let closest2 = &closest_node[bubble.kmers[j] as usize];
+                //         if closest2.is_none() {
+                //             continue;
+                //         }
+                //         let closest2_node = &seeds1[closest2.unwrap().0 as usize];
+                //         let dist_to_closest2 = closest2.unwrap().1;
+                //         // find closest distance between two closest ref nodes
+                //         let mut ref_dist = u16::MAX;
+                //         for u in 0..closest1_node.actual_ref_positions.len() {
+                //             for v in 0..closest2_node.actual_ref_positions.len() {
+                //                 let closest1_offset = closest1_node.actual_ref_positions[u] + (dist_to_closest1 as usize * k);
+                //                 let closest2_offset = closest2_node.actual_ref_positions[v] + (dist_to_closest2 as usize * k);
+                //                 let dist = (closest1_offset.abs_diff(closest2_offset)) as u16;
+                //                 if dist < ref_dist {
+                //                     ref_dist = dist;
+                //                 }
+                //             }
+                //         }
+                //         let linearized_dist = node1.order_val.abs_diff(node2.order_val) as u16;
+                //         if linearized_dist.abs_diff(ref_dist) <= (longest_path_on_bubble - shortest_path_on_bubble) as u16 {
+                //             continue;
+                //         }
+                //         dist_mat.set(node1.id as usize, node2.id as usize, ref_dist as u32);
+                //         // println!("{}-{}: {}-{}: {}-{}", node1.id, node2.id, node1.order_val, node2.order_val, ref_dist, linearized_dist);
+                //     }
+                // }
+                // save estimated reference distance between the start and end of the bubble
+                let node1 = &seeds1[bubble.start as usize];
+                let closest1 = &closest_node[bubble.start as usize];
+                if closest1.is_none() {
+                    continue;
+                }
+                let closest1_node = &seeds1[closest1.unwrap().0 as usize];
+                let dist_to_closest1 = closest1.unwrap().1;
+                let node2 = &seeds1[bubble.end as usize];
+                let closest2 = &closest_node[bubble.end as usize];
+                if closest2.is_none() {
+                    continue;
+                }
+                let closest2_node = &seeds1[closest2.unwrap().0 as usize];
+                let dist_to_closest2 = closest2.unwrap().1;
+                // find closest distance between two closest ref nodes
+                let mut ref_dist = u16::MAX;
+                for u in 0..closest1_node.actual_ref_positions.len() {
+                    for v in 0..closest2_node.actual_ref_positions.len() {
+                        let closest1_offset = closest1_node.actual_ref_positions[u] + (dist_to_closest1 as usize * k);
+                        let closest2_offset = closest2_node.actual_ref_positions[v] + (dist_to_closest2 as usize * k);
+                        let dist = (closest1_offset.abs_diff(closest2_offset)) as u16;
+                        if dist < ref_dist {
+                            ref_dist = dist;
                         }
-                        let closest2_node = &seeds1[closest2.unwrap().0 as usize];
-                        let dist_to_closest2 = closest2.unwrap().1;
-                        // find closest distance between two closest ref nodes
-                        let mut ref_dist = u16::MAX;
-                        for u in 0..closest1_node.actual_ref_positions.len() {
-                            for v in 0..closest2_node.actual_ref_positions.len() {
-                                let closest1_offset = closest1_node.actual_ref_positions[u] + (dist_to_closest1 as usize * k);
-                                let closest2_offset = closest2_node.actual_ref_positions[v] + (dist_to_closest2 as usize * k);
-                                let dist = (closest1_offset.abs_diff(closest2_offset)) as u16;
-                                if dist < ref_dist {
-                                    ref_dist = dist;
-                                }
-                            }
-                        }
-                        let linearized_dist = node1.order_val.abs_diff(node2.order_val) as u16;
-                        if linearized_dist.abs_diff(ref_dist) <= (longest_path_on_bubble - shortest_path_on_bubble) as u16 {
-                            continue;
-                        }
-                        dist_mat.set(node1.id as usize, node2.id as usize, ref_dist as u32);
-                        // println!("{}-{}: {}-{}: {}-{}", node1.id, node2.id, node1.order_val, node2.order_val, ref_dist, linearized_dist);
                     }
                 }
+                let linearized_dist = node1.order_val.abs_diff(node2.order_val) as u16;
+                if linearized_dist.abs_diff(ref_dist) <= (longest_path_on_bubble - shortest_path_on_bubble) as u16 {
+                    continue;
+                }
+                dist_mat.set(node1.id as usize, node2.id as usize, ref_dist as u32);
             }
         }
         println!("{} element set in sparse distance matrix", dist_mat.num_nonzero);

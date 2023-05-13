@@ -94,6 +94,8 @@ pub fn find_bubbles(ref_nodes: &Vec<KmerNode>) -> Vec<Bubble> {
                 bubble_id += 1;
                 bubble.longest_path_length = Some(graph_utils::longest_path_length(&ref_nodes, &bubble.kmers, &bubble.start, &bubble.end));
                 bubble.shortest_path_length = Some(graph_utils::shortest_path_length(&ref_nodes, &bubble.kmers, &bubble.start, &bubble.end));
+                // clear kmers to save memory
+                bubble.kmers = Vec::new();
                 bubbles.push(bubble);
             }
         }

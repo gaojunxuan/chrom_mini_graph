@@ -2,6 +2,9 @@
 #$ -P simpsonlab
 #$ -N chrom_minigraph_benchmark_generate
 #$ -cwd
+#$ -l h_vmem=32G
+#$ -m eas
+#$ -M your_email_address
 
 # Load shell
 source /oicr/local/Modules/default/init/sh
