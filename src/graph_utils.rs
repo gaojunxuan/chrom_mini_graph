@@ -541,32 +541,34 @@ pub fn add_align_to_graph(
                 };
 
                 let genome_dist_query;
-                if forward_strand {
-                    if i != 0 {
-                        genome_dist_query =
-                            strand_aln_nodes[(i - 1) as usize].child_edge_distance[0];
+                if strand_aln_nodes.len() != 0 {
+                    if forward_strand {
+                        if i != 0 {
+                            genome_dist_query =
+                                strand_aln_nodes[(i - 1) as usize].child_edge_distance[0];
+                        } else {
+                            genome_dist_query =
+                                strand_aln_nodes[strand_aln_nodes.len() - 1].child_edge_distance[0];
+                        }
                     } else {
-                        genome_dist_query =
-                            strand_aln_nodes[strand_aln_nodes.len() - 1].child_edge_distance[0];
+                        genome_dist_query = strand_aln_nodes[i as usize].child_edge_distance[0];
                     }
-                } else {
-                    genome_dist_query = strand_aln_nodes[i as usize].child_edge_distance[0];
+    
+                    if i as usize % samp_freq == 0 || strand_aln_nodes[i as usize].repetitive {
+                        new_kmer_node
+                            .actual_ref_positions
+                            .push(strand_aln_nodes[i as usize].actual_ref_positions[0]);
+                    }
+                    parent_node.child_nodes.push(new_id as u32);
+                    parent_node.child_edge_distance.push((
+                        genome_dist_query.0,
+                        (1, (parent_node.child_nodes.len() - 1) as u8),
+                    ));
+                    new_kmer_node.parent_nodes.push(parent_node.id);
+                    new_nodes.push(new_kmer_node);
+                    nn_len += 1;
+                    parent_node = &mut new_nodes[nn_len - 1];
                 }
-
-                if i as usize % samp_freq == 0 || strand_aln_nodes[i as usize].repetitive {
-                    new_kmer_node
-                        .actual_ref_positions
-                        .push(strand_aln_nodes[i as usize].actual_ref_positions[0]);
-                }
-                parent_node.child_nodes.push(new_id as u32);
-                parent_node.child_edge_distance.push((
-                    genome_dist_query.0,
-                    (1, (parent_node.child_nodes.len() - 1) as u8),
-                ));
-                new_kmer_node.parent_nodes.push(parent_node.id);
-                new_nodes.push(new_kmer_node);
-                nn_len += 1;
-                parent_node = &mut new_nodes[nn_len - 1];
             }
             parent_node.child_nodes.push(kmer2r.id);
             kmer2r.parent_nodes.push(parent_node.id);
