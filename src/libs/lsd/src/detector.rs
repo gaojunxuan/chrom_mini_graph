@@ -7,7 +7,7 @@ pub fn detect<'a>(graph: &'a mut Cmg<'a>, bubbles: &mut Vec<Bubble>) {
     let mut root_generator = RootGenerator::new(g.graph.nodes.len() as u32);
     // let mut bubble_counter = 0;
     let reporter = |x: &[u32], bubbles: &mut Vec<Bubble>| {
-        if x.len() > 2 {
+        if x.len() > 10 {
             let bubble = Bubble {
                 id: bubbles.len(),
                 kmers: x.iter().map(|&x| x as u32).collect::<Vec<u32>>(),
