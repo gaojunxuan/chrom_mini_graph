@@ -364,7 +364,7 @@ fn main() {
 
         let mut aln_score_array = vec![];
         let mut mean_score = 0.0;
-        let mut top_sort = graph_utils::top_sort_kahns(&mut seeds1);
+        graph_utils::top_sort_kahns(&mut seeds1);
 
         for i in 1..chroms.len() {
             let old_graph_len = seeds1.len();
@@ -495,7 +495,7 @@ fn main() {
                 seeds1.len() - old_graph_len
             );
 
-            top_sort = graph_utils::top_sort_kahns(&mut seeds1);
+            graph_utils::top_sort_kahns(&mut seeds1);
             println!("Top sort time: {}.", now.elapsed().as_secs_f32());
         }
 
@@ -504,8 +504,8 @@ fn main() {
         let mut cmg: Cmg<'_> = Cmg::new(&mut seeds1, k as u8);
         lsd::detector::detect(&mut cmg, &mut bubbles);
         for bubble in bubbles.iter_mut() {
-            bubble.shortest_path_length = Some(graph_utils::shortest_path_length(&seeds1, &top_sort, &bubble.start, &bubble.end));
-            bubble.longest_path_length = Some(graph_utils::longest_path_length(&seeds1, &top_sort, &bubble.start, &bubble.end));
+            bubble.shortest_path_length = Some(graph_utils::shortest_path_length(&seeds1, &bubble.kmers, &bubble.start, &bubble.end));
+            bubble.longest_path_length = Some(graph_utils::longest_path_length(&seeds1, &bubble.kmers, &bubble.start, &bubble.end));
         }
 
         // bubbles_utils::find_superbubbles(&seeds1, &top_sort, &mut bubbles);

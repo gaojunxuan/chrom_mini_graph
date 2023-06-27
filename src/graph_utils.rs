@@ -880,7 +880,8 @@ pub fn shortest_path_length(ref_nodes: &Vec<KmerNode>, top_sort: &Vec<u32>, bubb
     // assume that bubble_nodes are sorted in topological order
     let mut dist = vec![u32::MAX; ref_nodes.len()];
     dist[*bubble_start as usize] = 0;
-    for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
+    for node in top_sort {
+    // for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
         for child in ref_nodes[*node as usize].child_nodes.iter().enumerate() {
             let child_id = *child.1;
             let dist_to_child = ref_nodes[*node as usize]
@@ -902,7 +903,8 @@ pub fn longest_path_length(ref_nodes: &Vec<KmerNode>, top_sort: &Vec<u32>, bubbl
     // assume that bubble_nodes are sorted in topological order
     let mut dist = vec![0; ref_nodes.len()];
     dist[*bubble_start as usize] = 0;
-    for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
+    for node in top_sort {
+    // for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
         for child in ref_nodes[*node as usize].child_nodes.iter().enumerate() {
             let child_id = *child.1;
             let dist_to_child = ref_nodes[*node as usize]
