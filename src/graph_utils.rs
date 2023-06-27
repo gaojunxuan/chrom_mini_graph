@@ -1,5 +1,5 @@
-use crate::data_structs::Bubble;
-use crate::data_structs::{Color, KmerNode};
+use crate::data_structs::{Color};
+use cmg_shared::data_structs::{KmerNode,Bubble};
 use fxhash::FxHashMap;
 use fxhash::FxHashSet;
 use smallvec::SmallVec;
@@ -141,7 +141,7 @@ struct State {
 // instead of a max-heap.
 impl Ord for State {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Notice that the we flip the ordering on costs.
+        // Notice that we flip the ordering on costs.
         // In case of a tie we compare positions - this step is necessary
         // to make implementations of `PartialEq` and `Ord` consistent.
         other.inval[1]
@@ -537,7 +537,9 @@ pub fn add_align_to_graph(
                     canonical: strand_aln_nodes[i as usize].canonical == forward_strand,
                     actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                     repetitive: strand_aln_nodes[i as usize].repetitive,
-                    primary_base: None
+                    primary_base: None,
+                    closest_ref: new_id as u32,
+                    dist_to_closest_ref: 0,
                 };
 
                 let genome_dist_query;
@@ -608,8 +610,8 @@ pub fn add_align_to_graph(
 /// * `Vec<Option<(u32,u16)>>` - A vector of the closest node for each node in the graph
 ///     along with the distance to the closest node
 /// 
-pub fn get_closest_node(ref_nodes: &Vec<KmerNode>) -> Vec<Option<(u32, u16)>> {
-    let mut closest_nodes = vec![Some((0, 0)); ref_nodes.len()];
+pub fn get_closest_node(ref_nodes: &mut Vec<KmerNode>) {
+    // let mut closest_nodes = vec![Some((0, 0)); ref_nodes.len()];
     let mut dist_to_coord_nodes = vec![vec![]; ref_nodes.len()];
     let mut visited_nodes = vec![false; ref_nodes.len()];
 
@@ -637,7 +639,9 @@ pub fn get_closest_node(ref_nodes: &Vec<KmerNode>) -> Vec<Option<(u32, u16)>> {
         let mut wander_dist = 0;
 
         if !parent_node.actual_ref_positions.is_empty() {
-            closest_nodes[i] = Some((i as u32, 0 as u16));
+            ref_nodes[i].closest_ref = i as u32;
+            ref_nodes[i].dist_to_closest_ref = 0 as u16;
+            // closest_nodes[i] = Some((i as u32, 0 as u16));
             continue;
         }
 
@@ -743,16 +747,18 @@ pub fn get_closest_node(ref_nodes: &Vec<KmerNode>) -> Vec<Option<(u32, u16)>> {
     for (i, vec) in dist_to_coord_nodes.iter().enumerate() {
         let closest_node = vec.iter().min();
         if !closest_node.is_none() {
-            closest_nodes[i] = Some((closest_node.unwrap().1, closest_node.unwrap().0 as u16));
+            // closest_nodes[i] = Some((closest_node.unwrap().1, closest_node.unwrap().0 as u16));
+            ref_nodes[i].closest_ref = closest_node.unwrap().1;
+            ref_nodes[i].dist_to_closest_ref = closest_node.unwrap().0 as u16;
             num_some += 1;
         }
     }
-    println!(
-        "Done finding closest nodes {} - {}",
-        num_some,
-        ref_nodes.len()
-    );
-    return closest_nodes;
+    // println!(
+    //     "Done finding closest nodes {} - {}",
+    //     num_some,
+    //     ref_nodes.len()
+    // );
+    // return closest_nodes;
 }
 
 /// Binary search a list of bubble positions (start, end, node_id, bubble_id) for the bubble 
@@ -870,11 +876,11 @@ pub fn get_closest_bubble_source(ref_nodes: &Vec<KmerNode>, bubbles: &Vec<Bubble
 }
 
 /// Find the shortest path between bubble_start and bubble_end in the given bubble
-pub fn shortest_path_length(ref_nodes: &Vec<KmerNode>, bubble_nodes: &Vec<u32>, bubble_start: &u32, bubble_end: &u32) -> u32 {
+pub fn shortest_path_length(ref_nodes: &Vec<KmerNode>, top_sort: &Vec<u32>, bubble_start: &u32, bubble_end: &u32) -> u32 {
     // assume that bubble_nodes are sorted in topological order
     let mut dist = vec![u32::MAX; ref_nodes.len()];
     dist[*bubble_start as usize] = 0;
-    for node in bubble_nodes {
+    for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
         for child in ref_nodes[*node as usize].child_nodes.iter().enumerate() {
             let child_id = *child.1;
             let dist_to_child = ref_nodes[*node as usize]
@@ -892,11 +898,11 @@ pub fn shortest_path_length(ref_nodes: &Vec<KmerNode>, bubble_nodes: &Vec<u32>, 
 }
 
 /// Find the longest path between bubble_start and bubble_end in the given bubble
-pub fn longest_path_length(ref_nodes: &Vec<KmerNode>, bubble_nodes: &Vec<u32>, bubble_start: &u32, bubble_end: &u32) -> u32 {
+pub fn longest_path_length(ref_nodes: &Vec<KmerNode>, top_sort: &Vec<u32>, bubble_start: &u32, bubble_end: &u32) -> u32 {
     // assume that bubble_nodes are sorted in topological order
     let mut dist = vec![0; ref_nodes.len()];
     dist[*bubble_start as usize] = 0;
-    for node in bubble_nodes {
+    for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
         for child in ref_nodes[*node as usize].child_nodes.iter().enumerate() {
             let child_id = *child.1;
             let dist_to_child = ref_nodes[*node as usize]

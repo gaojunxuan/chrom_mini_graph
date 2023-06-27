@@ -1,8 +1,8 @@
 use bincode;
-use chrom_mini_graph::data_structs::Bubble;
-use chrom_mini_graph::data_structs::SparseMatrix;
+use cmg_shared::data_structs::Bubble;
 use clap::ArgAction;
 use clap::ArgMatches;
+use cmg_shared::data_structs::Cmg;
 use simple_logger::SimpleLogger;
 use log::LevelFilter;
 use bio::io::{fasta, fastq};
@@ -12,10 +12,9 @@ use chrom_mini_graph::align;
 use chrom_mini_graph::chain;
 use chrom_mini_graph::constants;
 use chrom_mini_graph::coord_chain;
-use chrom_mini_graph::data_structs::KmerNode;
+use cmg_shared::data_structs::KmerNode;
 //use chrom_mini_graph::deconvolution;
 use chrom_mini_graph::graph_utils;
-use chrom_mini_graph::bubbles_utils;
 use chrom_mini_graph::seeding_methods_bit;
 use clap::{Arg, Command};
 use debruijn::dna_string::*;
@@ -365,7 +364,7 @@ fn main() {
 
         let mut aln_score_array = vec![];
         let mut mean_score = 0.0;
-        graph_utils::top_sort_kahns(&mut seeds1);
+        let mut top_sort = graph_utils::top_sort_kahns(&mut seeds1);
 
         for i in 1..chroms.len() {
             let old_graph_len = seeds1.len();
@@ -496,109 +495,117 @@ fn main() {
                 seeds1.len() - old_graph_len
             );
 
-            graph_utils::top_sort_kahns(&mut seeds1);
+            top_sort = graph_utils::top_sort_kahns(&mut seeds1);
             println!("Top sort time: {}.", now.elapsed().as_secs_f32());
         }
 
         // compute bubbles
-        let bubbles = bubbles_utils::find_bubbles(&seeds1);
-        println!("Found {} bubbles", bubbles.len());
-        let mut file = File::create("bubbles.csv").unwrap();
-        write!(
-            &mut file,
-            "id,start_node_id,end_node_id,shortest_path,longest_path\n",
-        ).unwrap();
-        for bubble in bubbles.iter() {
-            let to_write = format!(
-                "{},{},{},{},{}\n",
-                bubble.id,
-                bubble.start,
-                bubble.end,
-                bubble.shortest_path_length.unwrap(),
-                bubble.longest_path_length.unwrap()
-            );
-            write!(&mut file, "{}", to_write).unwrap();
+        let mut bubbles: Vec<Bubble> = vec![];
+        let mut cmg: Cmg<'_> = Cmg::new(&mut seeds1, k as u8);
+        lsd::detector::detect(&mut cmg, &mut bubbles);
+        for bubble in bubbles.iter_mut() {
+            bubble.shortest_path_length = Some(graph_utils::shortest_path_length(&seeds1, &top_sort, &bubble.start, &bubble.end));
+            bubble.longest_path_length = Some(graph_utils::longest_path_length(&seeds1, &top_sort, &bubble.start, &bubble.end));
         }
-        let closest_node = graph_utils::get_closest_node(&seeds1);
-        let mut dist_mat = SparseMatrix::new((seeds1.len(), seeds1.len()));
-        for bubble in bubbles.iter() {
-            let shortest_path_on_bubble = bubble.shortest_path_length.unwrap();
-            let longest_path_on_bubble = bubble.longest_path_length.unwrap();
-            if longest_path_on_bubble as f32 > 1.5 * shortest_path_on_bubble as f32 {
-                // save estimated reference distance in a sparse matrix
-                // for i in 0..bubble.kmers.len() {
-                //     let node1 = &seeds1[bubble.kmers[i] as usize];
-                //     let closest1 = &closest_node[bubble.kmers[i] as usize];
-                //     if closest1.is_none() {
-                //         continue;
-                //     }
-                //     let closest1_node = &seeds1[closest1.unwrap().0 as usize];
-                //     let dist_to_closest1 = closest1.unwrap().1;
-    
-                //     for j in i+1..bubble.kmers.len() {
-                //         let node2 = &seeds1[bubble.kmers[j] as usize];
-                //         let closest2 = &closest_node[bubble.kmers[j] as usize];
-                //         if closest2.is_none() {
-                //             continue;
-                //         }
-                //         let closest2_node = &seeds1[closest2.unwrap().0 as usize];
-                //         let dist_to_closest2 = closest2.unwrap().1;
-                //         // find closest distance between two closest ref nodes
-                //         let mut ref_dist = u16::MAX;
-                //         for u in 0..closest1_node.actual_ref_positions.len() {
-                //             for v in 0..closest2_node.actual_ref_positions.len() {
-                //                 let closest1_offset = closest1_node.actual_ref_positions[u] + (dist_to_closest1 as usize * k);
-                //                 let closest2_offset = closest2_node.actual_ref_positions[v] + (dist_to_closest2 as usize * k);
-                //                 let dist = (closest1_offset.abs_diff(closest2_offset)) as u16;
-                //                 if dist < ref_dist {
-                //                     ref_dist = dist;
-                //                 }
-                //             }
-                //         }
-                //         let linearized_dist = node1.order_val.abs_diff(node2.order_val) as u16;
-                //         if linearized_dist.abs_diff(ref_dist) <= (longest_path_on_bubble - shortest_path_on_bubble) as u16 {
-                //             continue;
-                //         }
-                //         dist_mat.set(node1.id as usize, node2.id as usize, ref_dist as u32);
-                //         // println!("{}-{}: {}-{}: {}-{}", node1.id, node2.id, node1.order_val, node2.order_val, ref_dist, linearized_dist);
-                //     }
-                // }
-                // save estimated reference distance between the start and end of the bubble
-                let node1 = &seeds1[bubble.start as usize];
-                let closest1 = &closest_node[bubble.start as usize];
-                if closest1.is_none() {
-                    continue;
-                }
-                let closest1_node = &seeds1[closest1.unwrap().0 as usize];
-                let dist_to_closest1 = closest1.unwrap().1;
-                let node2 = &seeds1[bubble.end as usize];
-                let closest2 = &closest_node[bubble.end as usize];
-                if closest2.is_none() {
-                    continue;
-                }
-                let closest2_node = &seeds1[closest2.unwrap().0 as usize];
-                let dist_to_closest2 = closest2.unwrap().1;
-                // find closest distance between two closest ref nodes
-                let mut ref_dist = u16::MAX;
-                for u in 0..closest1_node.actual_ref_positions.len() {
-                    for v in 0..closest2_node.actual_ref_positions.len() {
-                        let closest1_offset = closest1_node.actual_ref_positions[u] + (dist_to_closest1 as usize * k);
-                        let closest2_offset = closest2_node.actual_ref_positions[v] + (dist_to_closest2 as usize * k);
-                        let dist = (closest1_offset.abs_diff(closest2_offset)) as u16;
-                        if dist < ref_dist {
-                            ref_dist = dist;
-                        }
-                    }
-                }
-                let linearized_dist = node1.order_val.abs_diff(node2.order_val) as u16;
-                if linearized_dist.abs_diff(ref_dist) <= (longest_path_on_bubble - shortest_path_on_bubble) as u16 {
-                    continue;
-                }
-                dist_mat.set(node1.id as usize, node2.id as usize, ref_dist as u32);
-            }
-        }
-        println!("{} element set in sparse distance matrix", dist_mat.num_nonzero);
 
+        // bubbles_utils::find_superbubbles(&seeds1, &top_sort, &mut bubbles);
+        // println!("Found {} bubbles in time {}", bubbles.len(), now.elapsed().as_secs_f32());
+        // let mut file = File::create("bubbles.csv").unwrap();
+        // write!(
+        //     &mut file,
+        //     "id,start_node_id,end_node_id,shortest_path,longest_path\n",
+        // ).unwrap();
+        // for bubble in bubbles.iter() {
+        //     let to_write = format!(
+        //         "{},{},{},{},{}\n",
+        //         bubble.id,
+        //         bubble.start,
+        //         bubble.end,
+        //         bubble.shortest_path_length.unwrap(),
+        //         bubble.longest_path_length.unwrap()
+        //     );
+        //     write!(&mut file, "{}", to_write).unwrap();
+        // }
+        graph_utils::get_closest_node(&mut seeds1);
+        // let mut dist_mat = SparseMatrix::new((seeds1.len(), seeds1.len()));
+        // for bubble in bubbles.iter() {
+        //     let shortest_path_on_bubble = bubble.shortest_path_length.unwrap();
+        //     let longest_path_on_bubble = bubble.longest_path_length.unwrap();
+        //     if longest_path_on_bubble as f32 > 1.5 * shortest_path_on_bubble as f32 {
+        //         // save estimated reference distance in a sparse matrix
+        //         // for i in 0..bubble.kmers.len() {
+        //         //     let node1 = &seeds1[bubble.kmers[i] as usize];
+        //         //     let closest1 = &closest_node[bubble.kmers[i] as usize];
+        //         //     if closest1.is_none() {
+        //         //         continue;
+        //         //     }
+        //         //     let closest1_node = &seeds1[closest1.unwrap().0 as usize];
+        //         //     let dist_to_closest1 = closest1.unwrap().1;
+    
+        //         //     for j in i+1..bubble.kmers.len() {
+        //         //         let node2 = &seeds1[bubble.kmers[j] as usize];
+        //         //         let closest2 = &closest_node[bubble.kmers[j] as usize];
+        //         //         if closest2.is_none() {
+        //         //             continue;
+        //         //         }
+        //         //         let closest2_node = &seeds1[closest2.unwrap().0 as usize];
+        //         //         let dist_to_closest2 = closest2.unwrap().1;
+        //         //         // find closest distance between two closest ref nodes
+        //         //         let mut ref_dist = u16::MAX;
+        //         //         for u in 0..closest1_node.actual_ref_positions.len() {
+        //         //             for v in 0..closest2_node.actual_ref_positions.len() {
+        //         //                 let closest1_offset = closest1_node.actual_ref_positions[u] + (dist_to_closest1 as usize * k);
+        //         //                 let closest2_offset = closest2_node.actual_ref_positions[v] + (dist_to_closest2 as usize * k);
+        //         //                 let dist = (closest1_offset.abs_diff(closest2_offset)) as u16;
+        //         //                 if dist < ref_dist {
+        //         //                     ref_dist = dist;
+        //         //                 }
+        //         //             }
+        //         //         }
+        //         //         let linearized_dist = node1.order_val.abs_diff(node2.order_val) as u16;
+        //         //         if linearized_dist.abs_diff(ref_dist) <= (longest_path_on_bubble - shortest_path_on_bubble) as u16 {
+        //         //             continue;
+        //         //         }
+        //         //         dist_mat.set(node1.id as usize, node2.id as usize, ref_dist as u32);
+        //         //         // println!("{}-{}: {}-{}: {}-{}", node1.id, node2.id, node1.order_val, node2.order_val, ref_dist, linearized_dist);
+        //         //     }
+        //         // }
+        //         // save estimated reference distance between the start and end of the bubble
+        //         let node1 = &seeds1[bubble.start as usize];
+        //         let closest1 = &closest_node[bubble.start as usize];
+        //         if closest1.is_none() {
+        //             continue;
+        //         }
+        //         let closest1_node = &seeds1[closest1.unwrap().0 as usize];
+        //         let dist_to_closest1 = closest1.unwrap().1;
+        //         let node2 = &seeds1[bubble.end as usize];
+        //         let closest2 = &closest_node[bubble.end as usize];
+        //         if closest2.is_none() {
+        //             continue;
+        //         }
+        //         let closest2_node = &seeds1[closest2.unwrap().0 as usize];
+        //         let dist_to_closest2 = closest2.unwrap().1;
+        //         // find closest distance between two closest ref nodes
+        //         let mut ref_dist = u16::MAX;
+        //         for u in 0..closest1_node.actual_ref_positions.len() {
+        //             for v in 0..closest2_node.actual_ref_positions.len() {
+        //                 let closest1_offset = closest1_node.actual_ref_positions[u] + (dist_to_closest1 as usize * k);
+        //                 let closest2_offset = closest2_node.actual_ref_positions[v] + (dist_to_closest2 as usize * k);
+        //                 let dist = (closest1_offset.abs_diff(closest2_offset)) as u16;
+        //                 if dist < ref_dist {
+        //                     ref_dist = dist;
+        //                 }
+        //             }
+        //         }
+        //         let linearized_dist = node1.order_val.abs_diff(node2.order_val) as u16;
+        //         if linearized_dist.abs_diff(ref_dist) <= (longest_path_on_bubble - shortest_path_on_bubble) as u16 {
+        //             continue;
+        //         }
+        //         dist_mat.set(node1.id as usize, node2.id as usize, ref_dist as u32);
+        //     }
+        // }
+        // println!("{} element set in sparse distance matrix", dist_mat.num_nonzero);
+        let now = Instant::now();
         let concat_graph = graph_utils::concat_graph(&seeds1[0], &seeds1);
         let mut file = File::create("simplified_mini_graph.csv").unwrap();
 
@@ -642,11 +649,11 @@ fn main() {
         let mut file_json = File::create(serial_json_name).unwrap();
         write!(&mut file_json, "{}", j.unwrap()).unwrap();
 
-        let now = Instant::now();
+        
         let mut file_bin = BufWriter::new(File::create(serial_bin_name).unwrap());
         bincode::serialize_into(
             &mut file_bin,
-            &(&seeds1, &good_chroms, &good_chrom_names, &dont_use_kmers, &dist_mat, &bubbles),
+            &(&seeds1, &good_chroms, &good_chrom_names, &dont_use_kmers, &bubbles),
         )
         .unwrap();
         println!(
@@ -692,12 +699,11 @@ fn main() {
         let ref_graph_f = File::open(ref_graph_file).unwrap();
         let ref_graph_reader = BufReader::new(ref_graph_f);
 
-        let (mut ref_graph, chroms, chrom_names, dont_use_kmers, dist_mat, bubbles): (
+        let (mut ref_graph, chroms, chrom_names, dont_use_kmers, bubbles): (
             Vec<KmerNode>,
             Vec<(DnaString, bool)>,
             Vec<String>,
             FxHashSet<Kmer16>,
-            SparseMatrix,
             Vec<Bubble>,
         ) = bincode::deserialize_from(ref_graph_reader).unwrap();
 
@@ -781,7 +787,7 @@ fn main() {
                         let qlen = read_seeds.len();
                         let q_hash_map = chain::get_kmer_dict(&read_seeds);
                         let now = Instant::now();
-                        let mut anc_score_strand_vec = chain::chain_seeds(
+                        let anc_score_strand_vec = chain::chain_seeds(
                             &ref_graph,
                             &mut read_seeds,
                             &ref_hash_map,
@@ -793,7 +799,7 @@ fn main() {
                             circular,
                             Some(&closest_bubble_source),
                             Some(&bubbles),
-                            Some(&dist_mat),
+                            Some(&ref_graph)
                         );
 
                         log::trace!("Chaining time: {}", now.elapsed().as_secs_f32());

@@ -1,0 +1,16 @@
+[package]
+name = "cmg_shared"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.dev]
+opt-level = 3
+debug = true
+
+[dependencies]
+serde = "*"
+serde_json = "1.0"
+debruijn = "*"
+smallvec = { version = "*", features = ["union","serde"] }

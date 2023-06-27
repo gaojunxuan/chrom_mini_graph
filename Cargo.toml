@@ -27,6 +27,13 @@ rayon = "*"
 simple_logger = "*"
 log = "*"
 radsort = "*"
+range_minimum_query = "0.1.0"
+
+[dependencies.lsd]
+path = "src/libs/lsd"
+
+[dependencies.cmg_shared]
+path = "src/libs/cmg_shared"
 
 [profile.release]
 opt-level = 3

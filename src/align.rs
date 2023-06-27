@@ -1,18 +1,17 @@
 use crate::align;
 use crate::data_structs::{Anchors, Color};
-use crate::data_structs::{BamInfo, KmerNode};
+use cmg_shared::data_structs::KmerNode;
+use crate::data_structs::{BamInfo};
 use block_aligner::cigar::*;
 use block_aligner::scan_block::*;
 use block_aligner::scores::*;
 use debruijn::dna_string::DnaString;
-use debruijn::dna_string::*;
 use debruijn::Kmer;
 use debruijn::Mer;
 use fxhash::FxHashSet;
 use rust_htslib::bam::header::{Header, HeaderRecord};
 use rust_htslib::bam::record::{Cigar as hts_Cigar, CigarString, Record};
 use rust_htslib::bam::{Format, HeaderView, Writer};
-use simple_logger::SimpleLogger;
 use std::time::Instant;
 
 #[inline]
@@ -395,7 +394,6 @@ pub fn align_from_chain(
 
     let ref_chrom = &chroms[chroms.len() - align::get_first_nonzero_bit(color) - 1].0;
     let strand_chrom = &chroms[chroms.len() - align::get_first_nonzero_bit(color) - 1].1;
-    let now = Instant::now();
     let (_ref_coords, kmer_hit_coords) =
         align::get_coords(&anchors, &ref_graph, &read_seeds, color, &chroms);
     if kmer_hit_coords.len() < 3 {

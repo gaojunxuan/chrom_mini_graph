@@ -1,8 +1,10 @@
 use crate::align;
+use crate::graph_utils::get_closest_node;
 use simple_logger::SimpleLogger;
 use crate::avl_tree::SearchTree;
 use crate::constants;
-use crate::data_structs::{KmerNode, Bubble, SparseMatrix};
+use crate::data_structs::{SparseMatrix};
+use cmg_shared::data_structs::{KmerNode, Bubble};
 use crate::data_structs::{Anchors, Color};
 use debruijn::kmer::Kmer16;
 use debruijn::Kmer;
@@ -87,7 +89,7 @@ fn get_chains<'a>(
     anchors: &mut Vec<(u32, u32)>,
     closest_bubble_source: Option<&Vec<Option<(u32,u32,u16)>>>,
     bubbles: Option<&Vec<Bubble>>,
-    dist_mat: Option<&SparseMatrix>
+    ref_nodes: Option<&Vec<KmerNode>>
 ) -> Vec<(Anchors, f64)> {
     let q_len = seeds_query.len();
     let order_val_last = seeds_query[q_len - 1].order_val;
@@ -137,7 +139,7 @@ fn get_chains<'a>(
         (0, 0),
         closest_bubble_source,
         bubbles,
-        dist_mat
+        ref_nodes,
     );
 
     //    let (mut best_seq_anchors_1, range_ref, range_query) =
@@ -202,7 +204,7 @@ fn get_chains<'a>(
             (range_ref.1, range_query.1),
             closest_bubble_source,
             bubbles,
-            dist_mat
+            ref_nodes,
         );
 
         let (mut best_seq_anchors_2, _range_ref, _range_query, second_best_aln_score) = mem::take(
@@ -299,7 +301,7 @@ pub fn chain_seeds<'a>(
     circular: bool,
     closest_bubble_source: Option<&Vec<Option<(u32,u32,u16)>>>,
     bubbles: Option<&Vec<Bubble>>,
-    dist_mat: Option<&SparseMatrix>
+    ref_nodes: Option<&Vec<KmerNode>>
 ) -> Vec<(Anchors, f64, bool)> {
     let (mut forward_anchors, mut backward_anchors, num_forward_anchors, num_backward_anchors) =
         anchors_from_seeds(
@@ -351,7 +353,7 @@ pub fn chain_seeds<'a>(
             &mut anchors,
             closest_bubble_source,
             bubbles,
-            dist_mat
+            ref_nodes,
         );
         return chains_scores
             .iter_mut()
@@ -376,7 +378,7 @@ pub fn chain_seeds<'a>(
             &mut forward_anchors,
             closest_bubble_source,
             bubbles,
-            dist_mat
+            ref_nodes,
         );
         forward_strand = false;
         let chains_scores_backward = get_chains(
@@ -390,7 +392,7 @@ pub fn chain_seeds<'a>(
             &mut backward_anchors,
             closest_bubble_source,
             bubbles,
-            dist_mat
+            ref_nodes,
         );
         let mut return_chains = vec![];
         for (chain, score) in chains_scores_forward.into_iter() {
@@ -630,7 +632,7 @@ pub fn score_anchors(
     modulo_positions: (u32, u32),
     closest_bubble_source: Option<&Vec<Option<(u32,u32,u16)>>>,
     bubbles: Option<&Vec<Bubble>>,
-    dist_mat: Option<&SparseMatrix>,
+    ref_nodes: Option<&Vec<KmerNode>>,
 ) {
     let q_len = seeds_query.len() as u32;
     let r_len = seeds_ref.len() as u32;
@@ -707,6 +709,7 @@ pub fn score_anchors(
         let mut best_j = usize::MAX;
         let mut num_iter = 0;
         let mut max_num_iter = 0;
+        
         if chain_heuristic && chain_reads {
             for j in (0..i).rev() {
                 if num_iter == adj_h || max_num_iter > 3 * adj_h {
@@ -763,10 +766,9 @@ pub fn score_anchors(
                     f_cand_i = f[j] + heuristic_score(ref_order_dist, query_order_dist);
                     if heuristic_score(ref_order_dist, query_order_dist) < 50.0 {
                         let mut dist = ref_order_dist;
-                        if !closest_bubble_source.is_none() && !bubbles.is_none() && !dist_mat.is_none() {
+                        if !closest_bubble_source.is_none() && !bubbles.is_none() {
                             //     let bubble_pos = bubble_pos.unwrap();
                             let bubbles = bubbles.unwrap();
-                            let dist_mat = dist_mat.unwrap();
                             let closest_bubble_source = closest_bubble_source.unwrap();
                             // negative score, check if i and j cross a superbubble
                             // log::trace!("Anchors: {}-to-{} ({},{}), ({},{}), score = {}, ref_dis = {}, query_dist = {}", 
@@ -792,12 +794,16 @@ pub fn score_anchors(
                             let closest_bubble = closest_bubble_source[left_most_id as usize];
                             let v_id = bubbles[closest_bubble.unwrap().1 as usize].end;
                             let u_id = bubbles[closest_bubble.unwrap().1 as usize].start;
+                            
+                            let longest_path_on_bubble = bubbles[closest_bubble.unwrap().1 as usize].longest_path_length.unwrap();
+                            let shortest_path_on_bubble = bubbles[closest_bubble.unwrap().1 as usize].shortest_path_length.unwrap();
+                            let is_unbalanced = longest_path_on_bubble > 2 * shortest_path_on_bubble;
                     
                             let u_pos = seeds_ref[u_id as usize].order_val;
                             let v_pos = seeds_ref[v_id as usize].order_val;
                     
                             // check if (i,j) contains the bubble interval (u,v)
-                            if left_most_pos <= u32::min(u_pos, v_pos) && right_most_pos >= u32::max(u_pos, v_pos) {
+                            if left_most_pos <= u32::min(u_pos, v_pos) && right_most_pos >= u32::max(u_pos, v_pos) && is_unbalanced {
                                 // log::trace!("Anchor pair {}-{} crosses a superbubble", i_id, j_id);
                                 // use alternative scoring matrix to assign a score to the anchor pair
                                 let mut i_to_u = u32::MAX;
@@ -850,11 +856,15 @@ pub fn score_anchors(
                                 }
                                 // update dist
                                 if i_to_u != u32::MAX && v_to_j != u32::MAX {
-                                    let mut u_to_v = min(dist_mat.get(u.id as usize, v.id as usize), dist_mat.get(v.id as usize, u.id as usize));
-                                    if u_to_v == u32::MAX {
-                                        u_to_v = 0;
+                                    if !ref_nodes.is_none() {
+                                        let ref_nodes = ref_nodes.unwrap();
+                                        let u_pos_est = ref_nodes[u.closest_ref as usize].actual_ref_positions[0];
+                                        let v_pos_est = ref_nodes[v.closest_ref as usize].actual_ref_positions[0];
+                                        let u_to_v = u_pos_est.abs_diff(v_pos_est) as u16 + u.dist_to_closest_ref + v.dist_to_closest_ref;
+                                        // dist = f64::min((i_to_u + u_to_v + v_to_j) as f64, dist) as f64;
+                                        dist = f64::min(u_to_v as f64, dist) as f64;
                                     }
-                                    dist = f64::min((i_to_u + u_to_v + v_to_j) as f64, dist) as f64;
+                                    
                                 }
                             }
                             f_cand_i = f[j] + heuristic_score(dist, query_order_dist);

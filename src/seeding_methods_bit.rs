@@ -1,4 +1,5 @@
-use crate::data_structs::{Color, KmerNode};
+use crate::data_structs::{Color};
+use cmg_shared::data_structs::KmerNode;
 use debruijn::dna_string::*;
 use debruijn::kmer::Kmer10;
 use debruijn::kmer::Kmer12;
@@ -179,6 +180,8 @@ pub fn minimizer_seeds(
                 actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                 repetitive: sample_coord,
                 primary_base: Some(*positions_selected.last().unwrap() as u32),
+                closest_ref: positions_selected.len() as u32 - 1,
+                dist_to_closest_ref: 0,
             };
             if positions_selected.len() % samp_freq == 0 || sample_coord {
                 kmer_node
@@ -339,6 +342,8 @@ pub fn open_sync_seeds(
                         actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                         repetitive: sample_coord,
                         primary_base: Some(*positions_selected.last().unwrap() as u32),
+                        closest_ref: positions_selected.len() as u32 - 1,
+                        dist_to_closest_ref: 0,
                     };
 
                     if positions_selected.len() % samp_freq == 0 || sample_coord {
@@ -389,6 +394,8 @@ pub fn open_sync_seeds(
                         actual_ref_positions: SmallVec::<[usize; 0]>::new(),
                         repetitive: false,
                         primary_base: Some(*positions_selected.last().unwrap() as u32),
+                        closest_ref: positions_selected.len() as u32 - 1,
+                        dist_to_closest_ref: 0,
                     };
                     if positions_selected.len() % samp_freq == 0 {
                         kmer_node

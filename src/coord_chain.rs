@@ -2,7 +2,7 @@ use crate::align;
 use crate::avl_tree::SearchTree;
 use crate::chain;
 use crate::constants;
-use crate::data_structs::KmerNode;
+use cmg_shared::data_structs::KmerNode;
 use crate::data_structs::{Anchors, Color};
 use debruijn::kmer::Kmer16;
 use debruijn::Kmer;

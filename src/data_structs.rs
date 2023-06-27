@@ -9,7 +9,7 @@ use block_aligner::cigar::*;
 pub type Anchors = Vec<(u32, u32)>;
 pub type Color = u128;
 
-//Use the SmallVec impelementation to save lots of memory 
+//Use the SmallVec implementation to save lots of memory 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KmerNode{
     pub kmer: Kmer16,
@@ -23,8 +23,11 @@ pub struct KmerNode{
     pub canonical: bool,
     pub actual_ref_positions: SmallVec<[usize;0]>,
     pub repetitive: bool,
-    pub primary_base: Option<u32>
+    pub primary_base: Option<u32>,
+    pub closest_ref: u32,
+    pub dist_to_closest_ref: u16,
 }
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Bubble {
     pub id: u32,
