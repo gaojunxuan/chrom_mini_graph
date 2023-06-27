@@ -606,10 +606,6 @@ pub fn add_align_to_graph(
 
 /// Find the closest node that contains a reference position
 /// 
-/// # Returns
-/// * `Vec<Option<(u32,u16)>>` - A vector of the closest node for each node in the graph
-///     along with the distance to the closest node
-/// 
 pub fn get_closest_node(ref_nodes: &mut Vec<KmerNode>) {
     // let mut closest_nodes = vec![Some((0, 0)); ref_nodes.len()];
     let mut dist_to_coord_nodes = vec![vec![]; ref_nodes.len()];
@@ -753,6 +749,7 @@ pub fn get_closest_node(ref_nodes: &mut Vec<KmerNode>) {
             num_some += 1;
         }
     }
+    println!("Done finding closest nodes");
     // println!(
     //     "Done finding closest nodes {} - {}",
     //     num_some,

@@ -503,11 +503,13 @@ fn main() {
         let mut bubbles: Vec<Bubble> = vec![];
         let mut cmg: Cmg<'_> = Cmg::new(&mut seeds1, k as u8);
         lsd::detector::detect(&mut cmg, &mut bubbles);
+        
+        let now = Instant::now();
         for bubble in bubbles.iter_mut() {
             bubble.shortest_path_length = Some(graph_utils::shortest_path_length(&seeds1, &bubble.kmers, &bubble.start, &bubble.end));
             bubble.longest_path_length = Some(graph_utils::longest_path_length(&seeds1, &bubble.kmers, &bubble.start, &bubble.end));
         }
-
+        println!("Computing shortest and longest branches on bubbles time: {}", now.elapsed().as_secs_f32());
         // bubbles_utils::find_superbubbles(&seeds1, &top_sort, &mut bubbles);
         // println!("Found {} bubbles in time {}", bubbles.len(), now.elapsed().as_secs_f32());
         // let mut file = File::create("bubbles.csv").unwrap();
