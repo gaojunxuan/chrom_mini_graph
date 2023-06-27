@@ -317,21 +317,15 @@ pub fn top_sort_kahns(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
         }
         visited.insert(node);
         sorted_nodes.push(node_dist_pair);
-        for child in ref_nodes[node as usize].child_nodes.iter().enumerate() {
-            let child_id = *child.1;
+        for (dist_to_child, (_color, index)) in ref_nodes[node as usize].child_edge_distance.iter() {
+            let child_id = ref_nodes[ref_nodes[node as usize].child_nodes[*index as usize] as usize].id;
             if visited_edges.contains(&(node, child_id)) {
                 continue;
             }
             in_degree[child_id as usize] -= 1;
             visited_edges.insert((node, child_id));
             if in_degree[child_id as usize] == 0 {
-                let dist_to_child = ref_nodes[node as usize]
-                    .child_edge_distance
-                    .iter()
-                    .find(|(_dist, (_color, index))| *index == child.0 as u8)
-                    .unwrap()
-                    .0;
-                nodes_to_visit.push((child_id, dist_to_child));
+                nodes_to_visit.push((child_id, *dist_to_child));
             }
         }
     }
@@ -879,16 +873,10 @@ pub fn shortest_path_length(ref_nodes: &Vec<KmerNode>, top_sort: &Vec<u32>, bubb
     dist[*bubble_start as usize] = 0;
     for node in top_sort {
     // for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
-        for child in ref_nodes[*node as usize].child_nodes.iter().enumerate() {
-            let child_id = *child.1;
-            let dist_to_child = ref_nodes[*node as usize]
-                .child_edge_distance
-                .iter()
-                .find(|(_dist, (_color, index))| *index == child.0 as u8)
-                .unwrap()
-                .0;
-            if dist[child_id as usize] > dist[*node as usize] + dist_to_child as u32 {
-                dist[child_id as usize] = dist[*node as usize] + dist_to_child as u32;
+        for (dist_to_child, (_color, index)) in ref_nodes[*node as usize].child_edge_distance.iter() {
+            let child_id = ref_nodes[ref_nodes[*node as usize].child_nodes[*index as usize] as usize].id;
+            if dist[child_id as usize] > dist[*node as usize] + *dist_to_child as u32 {
+                dist[child_id as usize] = dist[*node as usize] + *dist_to_child as u32;
             }
         }
     }
@@ -902,16 +890,10 @@ pub fn longest_path_length(ref_nodes: &Vec<KmerNode>, top_sort: &Vec<u32>, bubbl
     dist[*bubble_start as usize] = 0;
     for node in top_sort {
     // for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
-        for child in ref_nodes[*node as usize].child_nodes.iter().enumerate() {
-            let child_id = *child.1;
-            let dist_to_child = ref_nodes[*node as usize]
-                .child_edge_distance
-                .iter()
-                .find(|(_dist, (_color, index))| *index == child.0 as u8)
-                .unwrap()
-                .0;
-            if dist[child_id as usize] < dist[*node as usize] + dist_to_child as u32 {
-                dist[child_id as usize] = dist[*node as usize] + dist_to_child as u32;
+        for (dist_to_child, (_color, index)) in ref_nodes[*node as usize].child_edge_distance.iter() {
+            let child_id = ref_nodes[ref_nodes[*node as usize].child_nodes[*index as usize] as usize].id;
+            if dist[child_id as usize] < dist[*node as usize] + *dist_to_child as u32 {
+                dist[child_id as usize] = dist[*node as usize] + *dist_to_child as u32;
             }
         }
     }
