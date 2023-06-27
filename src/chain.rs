@@ -795,7 +795,7 @@ pub fn score_anchors(
                             let v_id = bubbles[closest_bubble.unwrap().1 as usize].end;
                             let u_id = bubbles[closest_bubble.unwrap().1 as usize].start;
                             
-                            let longest_path_on_bubble = bubbles[closest_bubble.unwrap().1 as usize].longest_path_length.unwrap();
+                            let longest_path_on_bubble =  bubbles[closest_bubble.unwrap().1 as usize].longest_path_length.unwrap();
                             let shortest_path_on_bubble = bubbles[closest_bubble.unwrap().1 as usize].shortest_path_length.unwrap();
                             let is_unbalanced = longest_path_on_bubble > 2 * shortest_path_on_bubble;
                     
