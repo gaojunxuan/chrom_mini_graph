@@ -10,7 +10,8 @@ pub fn detect<'a>(graph: &'a mut Cmg<'a>, bubbles: &mut Vec<Bubble>) {
         if x.len() > 10 {
             let bubble = Bubble {
                 id: bubbles.len(),
-                kmers: x.iter().map(|&x| x as u32).collect::<Vec<u32>>(),
+                // kmers: x.iter().map(|&x| x as u32).collect::<Vec<u32>>()
+                kmers: vec![0],
                 start: x.first().unwrap().clone() as u32,
                 end: x.last().unwrap().clone() as u32,
                 longest_path_length: None,
