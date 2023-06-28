@@ -303,8 +303,8 @@ fn main() {
             }
         }
 
-        // good_chroms.push((chroms[0].0.clone(), true));
-        good_chroms.push((DnaString::new(), true));
+        good_chroms.push((chroms[0].0.clone(), true));
+        // good_chroms.push((DnaString::new(), true));
         good_chrom_names.push(chrom_names[0].clone());
 
         let mut seeds1;
@@ -470,8 +470,8 @@ fn main() {
                 continue;
             }
             // TODO: use actual chromosome data instead of empty string in production
-            // good_chroms.push((chroms[i].0.clone(), forward_strand));
-            good_chroms.push((DnaString::new(), true));
+            good_chroms.push((chroms[i].0.clone(), forward_strand));
+            // good_chroms.push((DnaString::new(), true));
             good_chrom_names.push(chrom_names[i].clone());
 
             mean_score = (mean_score * (i - 1) as f64 + aln_score) / (i as f64);
@@ -657,9 +657,14 @@ fn main() {
 
         
         let mut file_bin = BufWriter::new(File::create(serial_bin_name).unwrap());
+        // bincode::serialize_into(
+        //     &mut file_bin,
+        //     &(&seeds1, &good_chroms, &good_chrom_names, &dont_use_kmers, &bubbles),
+        // )
+        // .unwrap();
         bincode::serialize_into(
             &mut file_bin,
-            &(&seeds1, &good_chroms, &good_chrom_names, &dont_use_kmers, &bubbles),
+            &(&seeds1, &bubbles),
         )
         .unwrap();
         println!(
