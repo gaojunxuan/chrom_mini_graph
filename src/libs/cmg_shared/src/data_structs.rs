@@ -122,8 +122,7 @@ impl ColoredCmg<'_> {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Bubble {
-    pub id: usize,
-    pub kmers: Vec<u32>,
+    pub id: u32,
     pub start: u32,
     pub end: u32,
     pub longest_path_length: Option<u32>,
