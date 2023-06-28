@@ -157,7 +157,7 @@ impl PartialOrd for State {
     }
 }
 
-pub fn top_sort(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
+pub fn top_sort(ref_nodes: &Vec<KmerNode>) -> Vec<u32> {
     let mut nodes_to_visit = Vec::new();
     let mut stack_of_visited = Vec::new();
     stack_of_visited.push(0 as u32);
@@ -261,14 +261,14 @@ pub fn top_sort(ref_nodes: &mut Vec<KmerNode>) -> Vec<u32> {
     }
     let mut running_dist_opt = 0 as u32;
     for (i, (id, dist_opt)) in rev_sort_list.iter().rev().enumerate() {
-        ref_nodes[(*id) as usize].order = i as u32;
-        ref_nodes[(*id) as usize].order_val = running_dist_opt as u32;
+        // ref_nodes[(*id) as usize].order = i as u32;
+        // ref_nodes[(*id) as usize].order_val = running_dist_opt as u32;
         order_to_id.push(*id);
-        if let Some(dist) = dist_opt {
-            running_dist_opt += *dist as u32;
-        } else {
-            running_dist_opt += 1 as u32;
-        }
+        // if let Some(dist) = dist_opt {
+        //     running_dist_opt += *dist as u32;
+        // } else {
+        //     running_dist_opt += 1 as u32;
+        // }
     }
 
     return order_to_id;
@@ -871,11 +871,11 @@ pub fn shortest_path_length(ref_nodes: &Vec<KmerNode>, top_sort: &Vec<u32>, bubb
     // assume that bubble_nodes are sorted in topological order
     let mut dist = vec![u32::MAX; ref_nodes.len()];
     dist[*bubble_start as usize] = 0;
-    for node in top_sort {
-    // for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
+    // for node in top_sort {
+    for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
         for (dist_to_child, (_color, index)) in ref_nodes[*node as usize].child_edge_distance.iter() {
             let child_id = ref_nodes[ref_nodes[*node as usize].child_nodes[*index as usize] as usize].id;
-            if dist[child_id as usize] > dist[*node as usize] + *dist_to_child as u32 {
+            if dist[*node as usize] < u32::MAX && dist[child_id as usize] > dist[*node as usize] + *dist_to_child as u32 {
                 dist[child_id as usize] = dist[*node as usize] + *dist_to_child as u32;
             }
         }
@@ -888,8 +888,8 @@ pub fn longest_path_length(ref_nodes: &Vec<KmerNode>, top_sort: &Vec<u32>, bubbl
     // assume that bubble_nodes are sorted in topological order
     let mut dist = vec![0; ref_nodes.len()];
     dist[*bubble_start as usize] = 0;
-    for node in top_sort {
-    // for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
+    // for node in top_sort {
+    for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
         for (dist_to_child, (_color, index)) in ref_nodes[*node as usize].child_edge_distance.iter() {
             let child_id = ref_nodes[ref_nodes[*node as usize].child_nodes[*index as usize] as usize].id;
             if dist[child_id as usize] < dist[*node as usize] + *dist_to_child as u32 {

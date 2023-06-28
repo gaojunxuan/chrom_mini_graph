@@ -505,9 +505,10 @@ fn main() {
         lsd::detector::detect(&mut cmg, &mut bubbles);
         
         let now = Instant::now();
+        let top_sort = graph_utils::top_sort(&seeds1);
         for bubble in bubbles.iter_mut() {
-            bubble.shortest_path_length = Some(graph_utils::shortest_path_length(&seeds1, &bubble.kmers, &bubble.start, &bubble.end));
-            bubble.longest_path_length = Some(graph_utils::longest_path_length(&seeds1, &bubble.kmers, &bubble.start, &bubble.end));
+            bubble.shortest_path_length = Some(graph_utils::shortest_path_length(&seeds1, &top_sort, &bubble.start, &bubble.end));
+            bubble.longest_path_length = Some(graph_utils::longest_path_length(&seeds1, &top_sort, &bubble.start, &bubble.end));
         }
         println!("Computing shortest and longest branches on bubbles time: {}", now.elapsed().as_secs_f32());
         // bubbles_utils::find_superbubbles(&seeds1, &top_sort, &mut bubbles);
