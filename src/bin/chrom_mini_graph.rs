@@ -656,17 +656,17 @@ fn main() {
         write!(&mut file_json, "{}", j.unwrap()).unwrap();
 
         
-        // let mut file_bin = BufWriter::new(File::create(serial_bin_name).unwrap());
+        let mut file_bin = BufWriter::new(File::create(serial_bin_name).unwrap());
         bincode::serialize_into(
             &mut file_bin,
             &(&seeds1, &good_chroms, &good_chrom_names, &dont_use_kmers, &bubbles),
         )
         .unwrap();
-        bincode::serialize_into(
-            &mut file_bin,
-            &(&seeds1, &bubbles),
-        )
-        .unwrap();
+        // bincode::serialize_into(
+        //     &mut file_bin,
+        //     &(&seeds1, &bubbles),
+        // )
+        // .unwrap();
         println!(
             "Serializing and writing time {}.",
             now.elapsed().as_secs_f32()
