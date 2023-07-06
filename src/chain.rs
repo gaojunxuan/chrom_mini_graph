@@ -1,5 +1,6 @@
 use crate::align;
 use crate::graph_utils::get_closest_node;
+use log::trace;
 use simple_logger::SimpleLogger;
 use crate::avl_tree::SearchTree;
 use crate::constants;
@@ -797,8 +798,11 @@ pub fn score_anchors(
                             
                             let longest_path_on_bubble =  bubbles[closest_bubble.unwrap().1 as usize].longest_path_length.unwrap();
                             let shortest_path_on_bubble = bubbles[closest_bubble.unwrap().1 as usize].shortest_path_length.unwrap();
-                            let is_unbalanced = longest_path_on_bubble > 2 * shortest_path_on_bubble;
-                    
+                            let mut is_unbalanced = false;
+                            if shortest_path_on_bubble < u32::MAX && longest_path_on_bubble > 0 {
+                                is_unbalanced = longest_path_on_bubble > 2 * shortest_path_on_bubble;
+                            }
+                            
                             let u_pos = seeds_ref[u_id as usize].order_val;
                             let v_pos = seeds_ref[v_id as usize].order_val;
                     
