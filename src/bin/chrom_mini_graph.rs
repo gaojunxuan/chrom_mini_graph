@@ -516,22 +516,22 @@ fn main() {
         println!("Computing shortest and longest branches on bubbles time: {}", now.elapsed().as_secs_f32());
         // bubbles_utils::find_superbubbles(&seeds1, &top_sort, &mut bubbles);
         // println!("Found {} bubbles in time {}", bubbles.len(), now.elapsed().as_secs_f32());
-        // let mut file = File::create("bubbles.csv").unwrap();
-        // write!(
-        //     &mut file,
-        //     "id,start_node_id,end_node_id,shortest_path,longest_path\n",
-        // ).unwrap();
-        // for bubble in bubbles.iter() {
-        //     let to_write = format!(
-        //         "{},{},{},{},{}\n",
-        //         bubble.id,
-        //         bubble.start,
-        //         bubble.end,
-        //         bubble.shortest_path_length.unwrap(),
-        //         bubble.longest_path_length.unwrap()
-        //     );
-        //     write!(&mut file, "{}", to_write).unwrap();
-        // }
+        let mut file = File::create("bubbles.csv").unwrap();
+        write!(
+            &mut file,
+            "id,start_node_id,end_node_id,shortest_path,longest_path\n",
+        ).unwrap();
+        for bubble in bubbles.iter() {
+            let to_write = format!(
+                "{},{},{},{},{}\n",
+                bubble.id,
+                bubble.start,
+                bubble.end,
+                bubble.shortest_path_length.unwrap(),
+                bubble.longest_path_length.unwrap()
+            );
+            write!(&mut file, "{}", to_write).unwrap();
+        }
         graph_utils::get_closest_node(&mut seeds1);
         // let mut dist_mat = SparseMatrix::new((seeds1.len(), seeds1.len()));
         // for bubble in bubbles.iter() {

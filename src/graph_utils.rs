@@ -872,7 +872,9 @@ pub fn shortest_path_length(ref_nodes: &Vec<KmerNode>, top_sort: &Vec<u32>, bubb
     let mut dist = vec![u32::MAX; ref_nodes.len()];
     dist[*bubble_start as usize] = 0;
     // for node in top_sort {
-    for node in &top_sort[ref_nodes[*bubble_start as usize].order as usize..=ref_nodes[*bubble_end as usize].order as usize] {
+    let smaller_order = ref_nodes[*bubble_start as usize].order.min(ref_nodes[*bubble_end as usize].order);
+    let larger_order = ref_nodes[*bubble_start as usize].order.max(ref_nodes[*bubble_end as usize].order);
+    for node in &top_sort[smaller_order as usize..=larger_order as usize] {
         for (dist_to_child, (_color, index)) in ref_nodes[*node as usize].child_edge_distance.iter() {
             let child_id = ref_nodes[ref_nodes[*node as usize].child_nodes[*index as usize] as usize].id;
             if dist[*node as usize] < u32::MAX && dist[child_id as usize] > dist[*node as usize] + *dist_to_child as u32 {
