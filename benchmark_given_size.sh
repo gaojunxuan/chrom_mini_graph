@@ -28,5 +28,5 @@ do
     $CMG map -a --trace $GENERATED_FILE $SIM_FOLDER/$1/reads/ref${j}_len$1.fasta.fastq &> $CMG_FOLDER/report/$1/logs/map/log_map_size_${1}_ref_${j}.txt
     $SAMTOOLS sort $BAM_FILE -o $SORTED_BAM
     $SAMTOOLS coverage $SORTED_BAM > $CMG_FOLDER/report/$1/coverage_report_size_$1_ref_${j}.txt
-    $PYTHON3 $CMG_FOLDER/analyze_mapping_accuracy.py ref${j}_len$1 $CMG_FOLDER/best_genome_reads.txt > $CMG_FOLDER/report/$1/accuracy_report_size_${1}_ref_${j}.txt
+    $PYTHON3 $CMG_FOLDER/analyze_mapping_accuracy.py ref${j}_len$1 $CMG_FOLDER/report/$1/best_genome_reads.txt > $CMG_FOLDER/report/$1/accuracy_report_size_${1}_ref_${j}.txt
 done
