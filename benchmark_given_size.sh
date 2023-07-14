@@ -16,14 +16,15 @@ SAMTOOLS=/.mounts/labs/simpsonlab/sw/samtools/1.17/bin/samtools
 QSUB=/opt/uge-8.6/bin/lx-amd64/qsub
 SIM_FOLDER=/u/jgao/jgao/projects/chrom_minigraph/sim
 
+mkdir -p $CMG_FOLDER/report/
+mkdir -p $CMG_FOLDER/report/$1
+mkdir -p $CMG_FOLDER/report/$1/logs
+mkdir -p $CMG_FOLDER/report/$1/logs/gen
+mkdir -p $CMG_FOLDER/report/$1/logs/map
+
 $CMG generate $SIM_FOLDER/$1/refs/*.fasta &> $CMG_FOLDER/report/$1/logs/gen/log_generate_size_${1}.txt
 for j in {0..9}
 do
-    mkdir -p $CMG_FOLDER/report/
-    mkdir -p $CMG_FOLDER/report/$1
-    mkdir -p $CMG_FOLDER/report/$1/logs
-    mkdir -p $CMG_FOLDER/report/$1/logs/gen
-    mkdir -p $CMG_FOLDER/report/$1/logs/map
     $CMG map -a --trace $GENERATED_FILE $SIM_FOLDER/$1/reads/ref${j}_len$1.fasta.fastq &> $CMG_FOLDER/report/$1/logs/map/log_map_size_${1}_ref_${j}.txt
     $SAMTOOLS sort $BAM_FILE -o $SORTED_BAM
     $SAMTOOLS coverage $SORTED_BAM > $CMG_FOLDER/report/$1/coverage_report_size_$1_ref_${j}.txt
