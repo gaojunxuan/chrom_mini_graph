@@ -21,5 +21,8 @@ SIM_FOLDER=/u/jgao/jgao/projects/chrom_minigraph/sim
 
 for i in ${SIZES[@]}
 do
+    mkdir -p $CMG_FOLDER/report/$i
+    cd $CMG_FOLDER/report/$i
     $QSUB -N benchmark_size_$i $CMG_FOLDER/benchmark_given_size.sh $i
+    cd $CMG_FOLDER
 done
