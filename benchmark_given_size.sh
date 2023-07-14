@@ -16,7 +16,7 @@ SAMTOOLS=/.mounts/labs/simpsonlab/sw/samtools/1.17/bin/samtools
 QSUB=/opt/uge-8.6/bin/lx-amd64/qsub
 SIM_FOLDER=/u/jgao/jgao/projects/chrom_minigraph/sim
 
-$CMG generate $SIM_FOLDER/$1/refs/*.fasta &> $CMG_FOLDER/report/$1/logs/gen/log_generate_size_${$1}.txt
+$CMG generate $SIM_FOLDER/$1/refs/*.fasta &> $CMG_FOLDER/report/$1/logs/gen/log_generate_size_${1}.txt
 for j in {0..9}
 do
     mkdir $CMG_FOLDER/report/
