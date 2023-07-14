@@ -1,3 +1,10 @@
+#$ -N chrom_minigraph_benchmark
+#$ -cwd
+#$ -l h_vmem=64G
+#$ -l h_rt=144000
+#$ -m eas
+#$ -M your_email_address
+
 # For each ref length
 # 	create reference graph using 10 references
 # 	report time and mem usage of graph generation time
@@ -17,7 +24,7 @@ module load samtools/1.17
 
 for i in ${SIZES[@]}
 do
-    qsub -N "chrom_minigraph_generate_size_${i}" -cwd -l h_vmem=32G -l h_rt=72000 -m eas -M jgao@oicr.on.ca -q u20.q $CMG generate /u/jgao/jgao/code/rand_seq/${i}/refs/*.fasta
+    qsub -N "chrom_minigraph_generate_size_${i}" -cwd -l h_vmem=32G -l h_rt=72000 -m eas -M your_email_address -q u20.q $CMG generate /u/jgao/jgao/code/rand_seq/${i}/refs/*.fasta
     for j in {0..9}
     do
         qsub -N "chrom_minigraph_map_size_${i}_ref_${j}" -cwd -l h_vmem=32G -l h_rt=72000 -m eas -M jgao@oicr.on.ca -q u20.q $CMG map -a --trace $GENERATED_FILE /u/jgao/jgao/code/rand_seq/${i}/reads/ref${j}_len${i}.fasta.fastq
