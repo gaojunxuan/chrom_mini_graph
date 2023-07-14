@@ -21,6 +21,7 @@ mkdir -p $CMG_FOLDER/report/$1
 mkdir -p $CMG_FOLDER/report/$1/logs
 mkdir -p $CMG_FOLDER/report/$1/logs/gen
 mkdir -p $CMG_FOLDER/report/$1/logs/map
+mkdir -p $CMG_FOLDER/report/$1/benchmarks
 
 $CMG generate $SIM_FOLDER/$1/refs/*.fasta &> $CMG_FOLDER/report/$1/logs/gen/log_generate_size_${1}.txt
 for j in {0..9}
@@ -30,3 +31,9 @@ do
     $SAMTOOLS coverage $SORTED_BAM > $CMG_FOLDER/report/$1/coverage_report_size_$1_ref_${j}.txt
     $PYTHON3 $CMG_FOLDER/analyze_mapping_accuracy.py ref${j}_len$1 $CMG_FOLDER/report/$1/best_genome_reads.txt > $CMG_FOLDER/report/$1/accuracy_report_size_${1}_ref_${j}.txt
 done
+# cd into benchmarks folder
+cd $CMG_FOLDER/report/$1/benchmarks
+# submit generate and map timing jobs
+$QSUB -N benchmark_generate_size_$1 $CMG_FOLDER/run_generate.sh $1
+$QSUB -N benchmark_map_size_$1 $CMG_FOLDER/run_map.sh $1
+cd $CMG_FOLDER
