@@ -62,6 +62,21 @@ fn position_min<T: Ord>(slice: &[T]) -> Option<usize> {
         .map(|(idx, _)| idx)
 }
 
+/// Returns a tuple of the minimizer seeds and the positions selected
+///
+/// # Arguments
+/// * `s` - A DnaString
+/// * `w` - The window size
+/// * `k` - The k-mer size
+/// * `samp_freq` - The frequency to sample
+/// * `dont_use_kmers` - A set of k-mers to not use
+/// * `frequent_kmers` - A map of k-mers to their frequency
+/// * `primary_reference` - A boolean indicating if the reference is primary
+/// * `circular` - A boolean indicating if the genome is circular
+///
+/// # Returns
+/// A tuple of the minimizer seeds and the positions selected
+///
 pub fn minimizer_seeds(
     s: &DnaString,
     w: usize,

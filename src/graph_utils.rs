@@ -1,3 +1,4 @@
+use crate::data_structs::SimplifiedKmerNode;
 use crate::data_structs::{Color};
 use cmg_shared::data_structs::{KmerNode,Bubble};
 use fxhash::FxHashMap;
@@ -128,6 +129,65 @@ pub fn concat_graph<'a>(
     }
 
     return (to_return, vertex_to_kmers_map, all_unitig_nodes);
+}
+
+/// Compress the graph into a simplified graph by collapsing the unitigs into
+/// a single node. Compress all unitigs up to a branch point into a single node.
+/// 
+pub fn compress_graph(ref_nodes: &Vec<KmerNode>) -> Vec<SimplifiedKmerNode> {
+    // first form a set of non-branching paths
+    let mut non_branching_paths = Vec::new();
+    // let mut pseudo_to_real_map = FxHashMap::default();
+    let mut real_to_pseudo_map = FxHashMap::default();
+    let mut visited = FxHashSet::default();
+
+    for node in ref_nodes.iter() {
+        if node.child_nodes.len() != 1 || node.parent_nodes.len() != 1 {
+            if node.child_nodes.len() > 0 {
+                for child_id in node.child_nodes.iter() {
+                    visited.insert(child_id);
+                    let mut child = &ref_nodes[*child_id as usize];
+                    let mut curr_path = SimplifiedKmerNode {
+                        pseudo_id: non_branching_paths.len() as u32,
+                        id: node.id,
+                        color: node.color,
+                        child_nodes: Vec::new(),
+                        internal_nodes: vec![node.id],
+                        child_edge_distance: Vec::new(),
+                    };
+                    while (child.child_nodes.len() == 1) && (child.parent_nodes.len() == 1) {
+                        curr_path.internal_nodes.push(child.id);
+                        child = &ref_nodes[child.child_nodes[0] as usize];
+                    }
+                    // real_to_pseudo_map.insert(node.id, non_branching_paths.len() as u32); 
+                    real_to_pseudo_map.entry(node.id).or_insert(vec![]).push(non_branching_paths.len() as u32);
+                    non_branching_paths.push(curr_path);
+                }
+            }
+        }
+    }
+
+    // // print real to pseudo mapping
+    // for (real, pseudo) in real_to_pseudo_map.iter() {
+    //     println!("Real: {}, Pseudo: {:?}", real, pseudo);
+    // }
+
+    // now connect the non-branching paths
+    for supernode in non_branching_paths.iter_mut() {
+        let last_node = supernode.internal_nodes.last().unwrap();
+        let node = &ref_nodes[*last_node as usize];
+        for child_id in node.child_nodes.iter() {
+            let child = &ref_nodes[*child_id as usize];
+            let pseudo_ids = real_to_pseudo_map.get(&child.id);
+            if let Some(pseudo_ids) = pseudo_ids {
+                for pseudo_id in pseudo_ids {
+                    supernode.child_nodes.push(*pseudo_id);
+                    supernode.child_edge_distance.push((1, (child.color, 0)));
+                }
+            }
+        }
+    }
+    return non_branching_paths;
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -383,6 +443,9 @@ pub fn add_align_to_graph(
     //        anchors.push(anchors[0]);
     //    }
     let mut num_contains_dist_not = 0;
+    if anchors.len() == 0 {
+        return;
+    }
     for i in 0..anchors.len() - 1 {
         let ref_node_len = ref_nodes.len();
 
@@ -436,8 +499,6 @@ pub fn add_align_to_graph(
         kmer1r.color |= 1;
         kmer2r.color |= 1;
 
-        //        dbg!(anchors[i], anchors[i+1], &kmer1r, &kmer2r, &kmer1q, &kmer2q);
-
         if kmer1r.actual_ref_positions.len() > 0 && i == 0 {
             kmer1r
                 .actual_ref_positions
@@ -455,12 +516,6 @@ pub fn add_align_to_graph(
                 genome_dist_query_adj = kmer1q.child_edge_distance[0];
             } else {
                 genome_dist_query_adj = kmer2q.child_edge_distance[0];
-                //                dbg!(kmer2q.child_edge_distance[0], kmer1q.child_edge_distance[0]);
-                //                dbg!(&kmer1q,&kmer2q);
-                //                dbg!(&kmer1r,&kmer2r);
-                //                dbg!(kmer1q.kmer.to_string(),kmer2q.kmer.to_string(), kmer1q.kmer.rc().to_string(), kmer2q.kmer.rc().to_string());
-                //                dbg!(&kmer1r.child_edge_distance);
-                //                panic!();
             }
             let mut contains_dist = false;
             let mut edge_id = u8::MAX;
@@ -477,16 +532,6 @@ pub fn add_align_to_graph(
 
             if !contains_dist {
                 num_contains_dist_not += 1;
-                //                println!(
-                //                    "Unequal distance between adj minimizers: {:?}, {:?}, {}, {}, {}, {}, {}",
-                //                    genome_dist_query_adj,
-                //                    kmer1r.child_edge_distance,
-                //                    kmer1r.kmer.rc().to_string(),
-                //                    kmer2r.kmer.to_string(),
-                //                    kmer1q.kmer.to_string(),
-                //                    kmer2q.kmer.rc().to_string(),
-                //                    num_contains_dist_not
-                //                );
                 if edge_id == u8::MAX {}
                 kmer1r
                     .child_edge_distance
@@ -494,8 +539,6 @@ pub fn add_align_to_graph(
             }
             continue;
         } else {
-            //            dbg!(&kmer2q, &kmer1q);
-            //            dbg!(&kmer2r, &kmer1r);
             let mut parent_node = kmer1r;
             let mut nn_len = new_nodes.len();
             let mut range = vec![];

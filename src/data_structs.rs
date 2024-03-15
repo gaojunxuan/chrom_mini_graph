@@ -78,3 +78,13 @@ impl SparseMatrix {
         self.num_nonzero += 1;
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimplifiedKmerNode {
+    pub pseudo_id: u32,
+    pub id: u32,
+    pub color: Color,
+    pub child_nodes: Vec<u32>,
+    pub internal_nodes: Vec<u32>,
+    pub child_edge_distance: Vec<(u16,(Color,u8))>,
+}

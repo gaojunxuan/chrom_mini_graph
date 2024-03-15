@@ -34,11 +34,13 @@ def main(argv):
         dim = len(data)
         print("[Info] dim =", dim)
         edge_list = []
+        node_lengths = []
         for i, node in enumerate(data):
+            node_lengths.append(len(node['internal_nodes']) * k)
             if node['child_nodes']:
                 for j, child_idx in enumerate(node['child_nodes']):
                     dist = node['child_edge_distance'][j][0]
-                    edge_list.append((node['id'], child_idx, dist))
+                    edge_list.append((node['pseudo_id'], child_idx, dist))
         if edgelst_file != "": 
             with open(edgelst_file, 'a') as ef:
                 for u, v, dist in edge_list:
@@ -49,7 +51,7 @@ def main(argv):
         with open(out_file, 'w') as gfa_file:
             gfa_file.write('H\tVN:Z:2.0\n')
             for i in range(num_nodes):
-                gfa_file.write('S\t{}\t{}\n'.format(i, k))
+                gfa_file.write('S\t{}\t*\tLN:i:{}\n'.format(i, node_lengths[i]))
             for j in range(num_edges):
                 edge = edge_list[j]
                 gfa_file.write('L\t{}\t+\t{}\t+\t0M\n'.format(edge[0], edge[1], 1, 1))

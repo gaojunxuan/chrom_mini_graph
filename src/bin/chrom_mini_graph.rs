@@ -418,7 +418,7 @@ fn main() {
             let qlen = seeds2.len();
 
             // chain seeds and get the best anchors
-            let anc_score_strand_vec = chain::chain_seeds(
+            let anc_score_strand_vec: Vec<(Vec<(u32, u32)>, f64, bool)> = chain::chain_seeds(
                 &mut seeds1,
                 &mut seeds2,
                 &ref_hash_map,
@@ -433,9 +433,10 @@ fn main() {
                 None
             );
 
+            // get the best alignment by score
             let (best_anchors, aln_score, forward_strand) = anc_score_strand_vec
                 .into_iter()
-                .max_by(|x, y| x.1.partial_cmp(&y.1).unwrap())
+                .max_by(|x: &(Vec<(u32, u32)>, f64, bool), y: &(Vec<(u32, u32)>, f64, bool)| x.1.partial_cmp(&y.1).unwrap())
                 .unwrap();
             
             //Need to reverse the read strand so that it is "forward". Bad mutability
@@ -465,7 +466,12 @@ fn main() {
             );
 
             println!("Aln score, mean score {},{}", aln_score, mean_score);
-            if aln_score < 0.75 * mean_score && circular {
+            // if aln_score < 0.75 * mean_score && circular {
+            //     println!("Bad alignment. Continuing");
+            //     continue;
+            // }
+
+            if aln_score < 0.75 * mean_score {
                 println!("Bad alignment. Continuing");
                 continue;
             }
@@ -502,7 +508,7 @@ fn main() {
             println!("Top sort time: {}.", now.elapsed().as_secs_f32());
         }
 
-        // compute bubbles
+        // Find bubbles
         let mut bubbles: Vec<Bubble> = vec![];
         let mut cmg: Cmg<'_> = Cmg::new(&mut seeds1, k as u8);
         lsd::detector::detect(&mut cmg, &mut bubbles);
@@ -611,31 +617,39 @@ fn main() {
         //     }
         // }
         // println!("{} element set in sparse distance matrix", dist_mat.num_nonzero);
-        let now = Instant::now();
-        let concat_graph = graph_utils::concat_graph(&seeds1[0], &seeds1);
-        let mut file = File::create("simplified_mini_graph.csv").unwrap();
 
-        for (n1, n2, weight) in concat_graph.0.iter() {
-            let towrite = format!("{},{},{}\n", n1, n2, weight);
-            write!(&mut file, "{}", towrite).unwrap();
-        }
+        // NOTE (jun): Auxillary data
+        // let now = Instant::now();
+        // let concat_graph = graph_utils::concat_graph(&seeds1[0], &seeds1);
+        // let mut file = File::create("simplified_mini_graph.csv").unwrap();
 
-        let mut file = File::create("simplified_metadata.csv").unwrap();
+        // for (n1, n2, weight) in concat_graph.0.iter() {
+        //     let towrite = format!("{},{},{}\n", n1, n2, weight);
+        //     write!(&mut file, "{}", towrite).unwrap();
+        // }
 
-        for (node_id, vertices) in concat_graph.1.iter() {
-            if *node_id as usize > seeds1.len() {
-                dbg!(node_id, vertices);
-            }
-            let node_order = seeds1[*node_id as usize].order;
-            let node_color = format!("{:#08b}", seeds1[*node_id as usize].color);
-            let mut kmer_list = vec![];
-            for vertex in vertices {
-                let n = &seeds1[*vertex as usize];
-                kmer_list.push(n.kmer.to_string());
-            }
-            let towrite = format!("{},{},{:?}\n", node_order, node_color, kmer_list);
-            write!(&mut file, "{}", towrite).unwrap();
-        }
+        // let mut file = File::create("simplified_metadata.csv").unwrap();
+
+        // for (node_id, vertices) in concat_graph.1.iter() {
+        //     if *node_id as usize > seeds1.len() {
+        //         dbg!(node_id, vertices);
+        //     }
+        //     let node_order = seeds1[*node_id as usize].order;
+        //     let node_color = format!("{:#08b}", seeds1[*node_id as usize].color);
+        //     let mut kmer_list = vec![];
+        //     for vertex in vertices {
+        //         let n = &seeds1[*vertex as usize];
+        //         kmer_list.push(n.kmer.to_string());
+        //     }
+        //     let towrite = format!("{},{},{:?}\n", node_order, node_color, kmer_list);
+        //     write!(&mut file, "{}", towrite).unwrap();
+        // }
+
+        // let mut file = File::create("compressed_graph").unwrap();
+        // let compressed_graph = graph_utils::compress_graph(&seeds1);
+        // // write json file
+        // let j = serde_json::to_string(&compressed_graph);
+        // write!(&mut file, "{}", j.unwrap()).unwrap();
 
         let mut file_mini_pos = File::create("ref_mini_pos.txt").unwrap();
         for (i, position) in p1.iter().enumerate() {

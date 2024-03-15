@@ -771,17 +771,6 @@ pub fn score_anchors(
                             //     let bubble_pos = bubble_pos.unwrap();
                             let bubbles = bubbles.unwrap();
                             let closest_bubble_source = closest_bubble_source.unwrap();
-                            // negative score, check if i and j cross a superbubble
-                            // log::trace!("Anchors: {}-to-{} ({},{}), ({},{}), score = {}, ref_dis = {}, query_dist = {}", 
-                            //     seeds_ref[anchors[i].0 as usize].id,
-                            //     seeds_ref[anchors[j].0 as usize].id,
-                            //     seeds_ref[anchors[i].0 as usize].order_val,
-                            //     seeds_query[anchors[i].1 as usize].order_val, 
-                            //     seeds_ref[anchors[j].0 as usize].order_val,
-                            //     seeds_query[anchors[j].1 as usize].order_val,
-                            //     heuristic_score(ref_order_dist, query_order_dist),
-                            //     ref_order_dist,
-                            //     query_order_dist);
 
                             let i_id = seeds_ref[anchors[i].0 as usize].id;
                             let j_id = seeds_ref[anchors[j].0 as usize].id;
@@ -812,23 +801,13 @@ pub fn score_anchors(
                                 // use alternative scoring matrix to assign a score to the anchor pair
                                 let mut i_to_u = u32::MAX;
                                 let mut v_to_j = u32::MAX;
-                                let mut v = &seeds_ref[v_id as usize];
-                                let mut u = &seeds_ref[u_id as usize];
+                                let v = &seeds_ref[v_id as usize];
+                                let u = &seeds_ref[u_id as usize];
                                 // if u.order_val > v.order_val {
                                 //     mem::swap(&mut u, &mut v);
                                 // }
                                 if u.parent_nodes.len() > 0 {
                                     // find the closest color consistent parent
-                                    // for parent in u.parent_nodes.iter() {
-                                    //     // check if parent is color consistent with i
-                                    //     if seeds_ref[*parent as usize].color & seeds_ref[anchors[i].0 as usize].color > 0 {
-                                    //         // update i_to_u
-                                    //         let dist_to_parent = u.order_val - seeds_ref[*parent as usize].order_val;
-                                    //         if dist_to_parent < i_to_u {
-                                    //             i_to_u = dist_to_parent;
-                                    //         }
-                                    //     }
-                                    // }
                                     let parent = u.parent_nodes[0];
                                     if seeds_ref[parent as usize].color & seeds_ref[anchors[i].0 as usize].color > 0 {
                                         // update i_to_u
@@ -840,15 +819,6 @@ pub fn score_anchors(
                                 }
                                 // similarly, find v_to_j
                                 if v.child_nodes.len() > 0 {
-                                    // for child in v.child_nodes.iter() {
-                                    //     if seeds_ref[*child as usize].color & seeds_ref[anchors[j].0 as usize].color > 0 {
-                                    //         let dist_to_child = seeds_ref[*child as usize].order_val - v.order_val;
-                                    //         // update v_to_j
-                                    //         if dist_to_child < v_to_j {
-                                    //             v_to_j = dist_to_child;
-                                    //         }
-                                    //     }
-                                    // }
                                     let child = v.child_nodes[0];
                                     if seeds_ref[child as usize].color & seeds_ref[anchors[j].0 as usize].color > 0 {
                                         let dist_to_child = seeds_ref[child as usize].order_val - v.order_val;
@@ -872,75 +842,6 @@ pub fn score_anchors(
                                 }
                             }
                             f_cand_i = f[j] + heuristic_score(dist, query_order_dist);
-                    
-                            //     // binary search for the closest bubble source u using i_pos as the search key
-                            //     let mut l: i64 = 0;
-                            //     let mut r: i64 = (bubble_pos.len() - 1) as i64;
-                            //     while l <= r {
-                            //         let m: i64 = l + (r - l) / 2;
-                            //         if bubble_pos[m as usize].0 >= left_most_pos {
-                            //             r = m - 1;
-                            //         } else if bubble_pos[m as usize].0 < left_most_pos {
-                            //             l = m + 1;
-                            //         } else {
-                            //             break;
-                            //         }
-                            //     }
-                            //     // l is the index of the closest bubble source u
-                            //     // third position of the tuple is the bubble id
-                            //     if l < bubble_pos.len() as i64 {
-                            //         let l = (usize::max(l as usize, 0));
-                            //         let u = bubble_pos[l].2;
-                            //         let closest_bubble = &bubbles[u];
-                            //         let u_pos = seeds_ref[closest_bubble.start as usize].order_val;
-                            //         let v_pos = seeds_ref[closest_bubble.end as usize].order_val;
-                            //         // check if (i,j) contains the bubble interval (u,v)
-                            //         if left_most_pos <= u32::min(u_pos, v_pos) && right_most_pos >= u32::max(u_pos, v_pos) {
-                            //             // log::trace!("Anchor pair {}-{} crosses a superbubble", i_id, j_id);
-                            //             // use alternative scoring matrix to assign a score to the anchor pair
-                            //             let mut i_to_u = u32::MAX;
-                            //             let mut v_to_j = u32::MAX;
-                            //             let mut v = &seeds_ref[bubbles[u as usize].end as usize];
-                            //             let mut u = &seeds_ref[closest_bubble.start as usize];
-                            //             if u.order_val > v.order_val {
-                            //                 mem::swap(&mut u, &mut v);
-                            //             }
-                            //             if u.parent_nodes.len() > 0 {
-                            //                 // find the closest color consistent parent
-                            //                 for parent in u.parent_nodes.iter() {
-                            //                     // check if parent is color consistent with i
-                            //                     if seeds_ref[*parent as usize].color & seeds_ref[anchors[i].0 as usize].color > 0 {
-                            //                         // update i_to_u
-                            //                         let dist_to_parent = u.order_val - seeds_ref[*parent as usize].order_val;
-                            //                         if dist_to_parent < i_to_u {
-                            //                             i_to_u = dist_to_parent;
-                            //                         }
-                            //                     }
-                            //                 }
-                            //             }
-                            //             // similarly, find v_to_j
-                            //             if v.child_nodes.len() > 0 {
-                            //                 for child in v.child_nodes.iter() {
-                            //                     if seeds_ref[*child as usize].color & seeds_ref[anchors[j].0 as usize].color > 0 {
-                            //                         let dist_to_child = seeds_ref[*child as usize].order_val - v.order_val;
-                            //                         if dist_to_child < v_to_j {
-                            //                             v_to_j = dist_to_child;
-                            //                         }
-                            //                     }
-                            //                 }
-                            //             }
-                            //             // update dist
-                            //             if i_to_u != u32::MAX && v_to_j != u32::MAX {
-                            //                 let mut u_to_v = min(dist_mat.get(u.id as usize, v.id as usize), dist_mat.get(v.id as usize, u.id as usize));
-                            //                 if u_to_v == u32::MAX {
-                            //                     u_to_v = 0;
-                            //                 }
-                            //                 dist = f64::min((i_to_u + u_to_v + v_to_j) as f64, dist) as f64;
-                            //             }
-                            //         }
-                            //     }
-                            // }
-                            // f_cand_i = f[j] + heuristic_score(dist, query_order_dist);
                         }
                     }
                 }

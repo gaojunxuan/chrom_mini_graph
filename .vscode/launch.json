@@ -29,7 +29,7 @@
             //     ]
             // },
             "program": "${workspaceFolder}/target/debug/chrom_mini_graph",
-            "args": ["generate", "${workspaceFolder}/test_refs/*"],
+            "args": ["generate", "${workspaceFolder}/test_disjoint_refs/*"],
             "cwd": "${workspaceFolder}",
         }
     ]
